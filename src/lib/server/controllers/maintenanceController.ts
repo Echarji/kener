@@ -18,6 +18,30 @@ import subscriberQueue from "../queues/subscriberQueue.js";
 import GC from "../../global-constants";
 import seedSiteData from "../db/seedSiteData.js";
 
+/**
+ * Resolve the monitors a maintenance notification should target. Explicit per-monitor rows take
+ * precedence; a global maintenance with no rows targets every subscribable monitor. Returns the
+ * display string used in the mail body and the monitor tags used to pick recipients.
+ */
+async function GetMaintenanceNotificationTargets(
+  maintenance_id: number,
+): Promise<{ monitorNames: string; monitorTags: string[] }> {
+  const monitors = await db.getMonitorsByMaintenanceId(maintenance_id);
+  let monitorTags = monitors.map((m) => m.monitor_tag).filter(Boolean);
+  let monitorNames = monitors.map((m) => `${m.monitor_name}(${m.monitor_impact})`).join(", ");
+
+  if (monitorTags.length === 0) {
+    const maintenance = await db.getMaintenanceById(maintenance_id);
+    if (maintenance?.is_global === GC.YES) {
+      const allMonitors = await db.getMonitors({ status: GC.ACTIVE, is_hidden: GC.NO });
+      monitorTags = allMonitors.map((m) => m.tag);
+      monitorNames = "All Monitors";
+    }
+  }
+
+  return { monitorNames, monitorTags };
+}
+
 // ============ Input Interfaces ============
 
 export interface MonitorWithStatusInput {
@@ -120,8 +144,7 @@ export const CreateMaintenanceEventWithNotification = async (
     if (notificationSettings.event_types.created) {
       const siteVars = siteDataToVariables(siteData);
       const siteUrl = siteVars.site_url;
-      const monitors = await db.getMonitorsByMaintenanceId(maintenance_id);
-      const monitorNames = monitors.map((m) => `${m.monitor_name}(${m.monitor_impact})`).join(", ");
+      const { monitorNames, monitorTags } = await GetMaintenanceNotificationTargets(maintenance_id);
       const eventDetailed: MaintenanceEventRecordDetailed = {
         id: event.id,
         maintenance_id,
@@ -140,6 +163,7 @@ export const CreateMaintenanceEventWithNotification = async (
         "created",
         "Maintenance Created",
         siteUrl,
+        monitorTags,
       );
       await subscriberQueue.push(update);
     }
@@ -533,8 +557,7 @@ export const UpdateMaintenanceEventStatus = async (id: number, status: string): 
       const siteVars = siteDataToVariables(siteData);
       const siteUrl = siteVars.site_url;
       const maintenance = await db.getMaintenanceById(updated.maintenance_id);
-      const monitors = await db.getMonitorsByMaintenanceId(updated.maintenance_id);
-      const monitorNames = monitors.map((m) => `${m.monitor_name}(${m.monitor_impact})`).join(", ");
+      const { monitorNames, monitorTags } = await GetMaintenanceNotificationTargets(updated.maintenance_id);
       const eventDetailed: MaintenanceEventRecordDetailed = {
         ...updated,
         title: maintenance?.title || "",
@@ -547,6 +570,7 @@ export const UpdateMaintenanceEventStatus = async (id: number, status: string): 
         targetStatus === GC.COMPLETED ? "completed" : "cancelled",
         targetStatus === GC.COMPLETED ? "Maintenance Completed" : "Maintenance Cancelled",
         siteUrl,
+        monitorTags,
       );
       await subscriberQueue.push(update);
     }
@@ -679,8 +703,7 @@ export const UpdateMaintenanceEventStatuses = async (): Promise<void> => {
     for (const event of scheduledEvents) {
       await db.updateMaintenanceEventStatus(event.id, GC.READY);
       console.log(`Maintenance event ${event.id} marked as READY (starts at ${event.start_date_time})`);
-      const monitors = await db.getMonitorsByMaintenanceId(event.maintenance_id);
-      const monitorNames = monitors.map((m) => `${m.monitor_name}(${m.monitor_impact})`).join(", ");
+      const { monitorNames, monitorTags } = await GetMaintenanceNotificationTargets(event.maintenance_id);
       const timeUntilStart = formatDistanceStrict(
         new Date(event.start_date_time * 1000),
         new Date(currentTimestamp * 1000),
@@ -693,6 +716,7 @@ export const UpdateMaintenanceEventStatuses = async (): Promise<void> => {
           "starting_soon",
           "Maintenance Starting Soon",
           siteUrl,
+          monitorTags,
         );
         await subscriberQueue.push(update);
       }
@@ -703,8 +727,7 @@ export const UpdateMaintenanceEventStatuses = async (): Promise<void> => {
     for (const event of scheduledStartedEvents) {
       await db.updateMaintenanceEventStatus(event.id, GC.ONGOING);
       console.log(`Maintenance event ${event.id} marked as ONGOING (catch-up from SCHEDULED)`);
-      const monitors = await db.getMonitorsByMaintenanceId(event.maintenance_id);
-      const monitorNames = monitors.map((m) => `${m.monitor_name}(${m.monitor_impact})`).join(", ");
+      const { monitorNames, monitorTags } = await GetMaintenanceNotificationTargets(event.maintenance_id);
 
       if (notificationSettings.event_types.started) {
         const update = maintenanceToVariables(
@@ -714,6 +737,7 @@ export const UpdateMaintenanceEventStatuses = async (): Promise<void> => {
           "ongoing",
           "Maintenance In Progress",
           siteUrl,
+          monitorTags,
         );
         await subscriberQueue.push(update);
       }
@@ -724,8 +748,7 @@ export const UpdateMaintenanceEventStatuses = async (): Promise<void> => {
     for (const event of readyEvents) {
       await db.updateMaintenanceEventStatus(event.id, GC.ONGOING);
       console.log(`Maintenance event ${event.id} marked as ONGOING`);
-      const monitors = await db.getMonitorsByMaintenanceId(event.maintenance_id);
-      const monitorNames = monitors.map((m) => `${m.monitor_name}(${m.monitor_impact})`).join(", ");
+      const { monitorNames, monitorTags } = await GetMaintenanceNotificationTargets(event.maintenance_id);
 
       if (notificationSettings.event_types.started) {
         const update = maintenanceToVariables(
@@ -735,6 +758,7 @@ export const UpdateMaintenanceEventStatuses = async (): Promise<void> => {
           "ongoing",
           "Maintenance In Progress",
           siteUrl,
+          monitorTags,
         );
         await subscriberQueue.push(update);
       }
@@ -745,8 +769,7 @@ export const UpdateMaintenanceEventStatuses = async (): Promise<void> => {
     for (const event of ongoingEvents) {
       await db.updateMaintenanceEventStatus(event.id, GC.COMPLETED);
       console.log(`Maintenance event ${event.id} marked as COMPLETED`);
-      const monitors = await db.getMonitorsByMaintenanceId(event.maintenance_id);
-      const monitorNames = monitors.map((m) => `${m.monitor_name}(${m.monitor_impact})`).join(", ");
+      const { monitorNames, monitorTags } = await GetMaintenanceNotificationTargets(event.maintenance_id);
 
       if (notificationSettings.event_types.ended) {
         const update = maintenanceToVariables(
@@ -756,6 +779,7 @@ export const UpdateMaintenanceEventStatuses = async (): Promise<void> => {
           "completed",
           "Maintenance Completed",
           siteUrl,
+          monitorTags,
         );
         await subscriberQueue.push(update);
       }

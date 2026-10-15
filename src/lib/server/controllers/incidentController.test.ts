@@ -9,6 +9,8 @@ const { db, subscriberQueue } = vi.hoisted(() => ({
     getIncidentMonitorsByIncidentID: vi.fn(),
     createIncident: vi.fn(),
     getMonitorByTag: vi.fn(),
+    getMonitorsByTags: vi.fn(),
+    getMonitors: vi.fn(),
     insertIncidentMonitorWithMerge: vi.fn(),
   },
   subscriberQueue: { push: vi.fn() },
@@ -39,6 +41,10 @@ describe("AddIncidentComment: subscriber mail variables", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     db.getIncidentById.mockResolvedValue(incident);
+    db.getMonitors.mockResolvedValue([{ tag: "api" }, { tag: "web" }]);
+    db.getMonitorsByTags.mockImplementation(async (tags: string[]) =>
+      tags.map((tag) => ({ tag, name: tag.toUpperCase() })),
+    );
     db.insertIncidentComment.mockImplementation(async (_id: number, comment: string, state: string) => ({
       id: 99,
       comment,
@@ -63,7 +69,17 @@ describe("AddIncidentComment: subscriber mail variables", () => {
       incident_impact: "DOWN",
       is_down: true,
       is_degraded: false,
+      monitor_tags: ["api", "web"],
+      monitor_names: ["API", "WEB"],
     });
+  });
+
+  it("notifies only the subscribers of the affected monitors", async () => {
+    db.getIncidentMonitorsByIncidentID.mockResolvedValue([{ monitor_tag: "api", monitor_impact: "DOWN" }]);
+
+    await AddIncidentComment(12, "Looking into it", "INVESTIGATING", 2000);
+
+    expect(pushedVariables()).toMatchObject({ monitor_tags: ["api"] });
   });
 
   it("reads degraded when no monitor is down", async () => {
@@ -119,6 +135,9 @@ describe("CreateNewIncidentWithCommentAndMonitor", () => {
     db.createIncident.mockResolvedValue({ id: 12 });
     db.getIncidentById.mockResolvedValue(incident);
     db.getMonitorByTag.mockResolvedValue({ tag: "web" });
+    db.getMonitorsByTags.mockImplementation(async (tags: string[]) =>
+      tags.map((tag) => ({ tag, name: tag.toUpperCase() })),
+    );
     db.insertIncidentMonitorWithMerge.mockImplementation(
       async (row: { monitor_tag: string; monitor_impact: string }) => {
         attached.push(row);

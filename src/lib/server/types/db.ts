@@ -872,7 +872,10 @@ export interface SubscriptionConfigUpdate {
 // ============ New Subscription System (v2) ============
 
 export type SubscriptionMethodType = "email";
-export type SubscriptionEventType = "incidents" | "maintenances";
+// "status" is the monitor status-change notification introduced with monitor-based
+// subscriptions. "incidents" / "maintenances" are retained for backwards compatibility and
+// for the admin subscription toggles.
+export type SubscriptionEventType = "incidents" | "maintenances" | "status";
 export type SubscriptionStatus = "ACTIVE" | "INACTIVE";
 export type SubscriberUserStatus = "PENDING" | "ACTIVE" | "INACTIVE";
 
@@ -939,6 +942,32 @@ export interface UserSubscriptionV2Filter {
   subscriber_method_id?: number;
   event_type?: SubscriptionEventType;
 
+  status?: SubscriptionStatus;
+}
+
+// ============ subscriber_monitors table (monitor-based subscriptions) ============
+export interface SubscriberMonitorRecord {
+  id: number;
+  subscriber_user_id: number;
+  subscriber_method_id: number;
+  monitor_tag: string;
+  status: SubscriptionStatus;
+  created_at: DbTimestamp;
+  updated_at: DbTimestamp;
+}
+
+export interface SubscriberMonitorRecordInsert {
+  subscriber_user_id: number;
+  subscriber_method_id: number;
+  monitor_tag: string;
+  status?: SubscriptionStatus;
+}
+
+export interface SubscriberMonitorFilter {
+  subscriber_user_id?: number;
+  subscriber_method_id?: number;
+  monitor_tag?: string;
+  monitor_tags?: string[];
   status?: SubscriptionStatus;
 }
 

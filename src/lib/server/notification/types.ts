@@ -36,6 +36,12 @@ export interface SubscriptionVariableMap {
   update_subject: string;
   update_id: string;
   event_type: SubscriptionEventType;
+  // Monitor-based subscriptions: the monitors affected by this event. The recipient query is
+  // resolved from `monitor_tags`; `monitor_names` is available to templates for display.
+  monitor_tags?: string[];
+  monitor_names?: string[];
+  // Comma-separated affected monitor names, convenient for templates/messages.
+  monitor_list?: string;
   // Flags for templates that style by what the mail is about. Mustache has no comparisons, so
   // each is a boolean a section can test; only the flags that apply are set.
   update_state?: string;

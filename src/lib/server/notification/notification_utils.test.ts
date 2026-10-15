@@ -108,4 +108,23 @@ describe("maintenanceToVariables", () => {
       true,
     );
   });
+
+  it("carries the affected monitor tags used to pick recipients", () => {
+    const event = {
+      id: 3,
+      maintenance_id: 5,
+      title: "Database upgrade",
+      description: "",
+      start_date_time: 1767225600,
+      end_date_time: 1767229200,
+    } as unknown as Parameters<typeof maintenanceToVariables>[0];
+
+    const vars = maintenanceToVariables(event, "api", "has started", "start", "Maintenance Started", "", [
+      "api",
+      "web",
+    ]);
+
+    expect(vars.monitor_tags).toEqual(["api", "web"]);
+    expect(vars.monitor_list).toBe("api");
+  });
 });

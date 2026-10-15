@@ -1,9 +1,19 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-const { VerifyCaptchaToken, GetSiteDataByKey, SubscriberLogin } = vi.hoisted(() => ({
+const {
+  VerifyCaptchaToken,
+  GetSiteDataByKey,
+  SubscriberLogin,
+  VerifySubscriberToken,
+  UpdateSubscriberPreferences,
+  GetAvailableMonitors,
+} = vi.hoisted(() => ({
   VerifyCaptchaToken: vi.fn(),
   GetSiteDataByKey: vi.fn(),
   SubscriberLogin: vi.fn(),
+  VerifySubscriberToken: vi.fn(),
+  UpdateSubscriberPreferences: vi.fn(),
+  GetAvailableMonitors: vi.fn(),
 }));
 
 vi.mock("$lib/server/controllers/captchaController", () => ({ VerifyCaptchaToken }));
@@ -11,8 +21,9 @@ vi.mock("$lib/server/controllers/siteDataController", () => ({ GetSiteDataByKey 
 vi.mock("$lib/server/controllers/userSubscriptionsController", () => ({
   SubscriberLogin,
   VerifySubscriberOTP: vi.fn(),
-  VerifySubscriberToken: vi.fn(),
-  UpdateSubscriberPreferences: vi.fn(),
+  VerifySubscriberToken,
+  UpdateSubscriberPreferences,
+  GetAvailableMonitors,
 }));
 
 import post from "./post";
@@ -72,5 +83,63 @@ describe("POST /dashboard-apis/subscription — login action", () => {
 
     expect(response.status).toBe(200);
     expect(VerifyCaptchaToken).toHaveBeenCalledWith(null);
+  });
+});
+
+describe("POST /dashboard-apis/subscription — preferences actions", () => {
+  afterEach(() => {
+    VerifySubscriberToken.mockReset();
+    UpdateSubscriberPreferences.mockReset();
+    GetAvailableMonitors.mockReset();
+  });
+
+  it("returns the subscriber's monitors plus the available monitor catalog", async () => {
+    GetSiteDataByKey.mockResolvedValue(enabledConfig);
+    VerifySubscriberToken.mockResolvedValue({
+      success: true,
+      user: { email: "a@b.com" },
+      subscriptions: { incidents: true, maintenances: false },
+      monitor_tags: ["api"],
+    });
+    GetAvailableMonitors.mockResolvedValue([
+      { tag: "api", name: "API", category_name: null },
+      { tag: "web", name: "Website", category_name: null },
+    ]);
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const response = await post({ body: { action: "getPreferences", token: "tok" } } as any);
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.monitors).toEqual(["api"]);
+    expect(body.availableMonitors).toEqual([
+      { tag: "api", name: "API" },
+      { tag: "web", name: "Website" },
+    ]);
+  });
+
+  it("saves the monitor selection on updatePreferences", async () => {
+    GetSiteDataByKey.mockResolvedValue(enabledConfig);
+    UpdateSubscriberPreferences.mockResolvedValue({ success: true, monitor_tags: ["api", "web"] });
+
+    const response = await post({
+      body: { action: "updatePreferences", token: "tok", monitorTags: ["api", "web"] },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } as any);
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(UpdateSubscriberPreferences).toHaveBeenCalledWith("tok", { monitorTags: ["api", "web"] });
+    expect(body.monitors).toEqual(["api", "web"]);
+  });
+
+  it("rejects an invalid token on getPreferences", async () => {
+    GetSiteDataByKey.mockResolvedValue(enabledConfig);
+    VerifySubscriberToken.mockResolvedValue({ success: false, error: "Invalid or expired token" });
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await expect(post({ body: { action: "getPreferences", token: "bad" } } as any)).rejects.toMatchObject({
+      status: 401,
+    });
   });
 });

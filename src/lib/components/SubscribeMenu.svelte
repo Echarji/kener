@@ -3,7 +3,6 @@
   import * as InputOTP from "$lib/components/ui/input-otp/index.js";
   import { Button } from "$lib/components/ui/button/index.js";
   import { Input } from "$lib/components/ui/input/index.js";
-  import { Switch } from "$lib/components/ui/switch/index.js";
   import { Label } from "$lib/components/ui/label/index.js";
   import { onMount } from "svelte";
   import { resolve } from "$app/paths";
@@ -14,12 +13,12 @@
   import LogOut from "@lucide/svelte/icons/log-out";
   import Loader2 from "@lucide/svelte/icons/loader-2";
   import Bell from "@lucide/svelte/icons/bell";
-  import AlertTriangle from "@lucide/svelte/icons/alert-triangle";
-  import Wrench from "@lucide/svelte/icons/wrench";
+  import CircleCheck from "@lucide/svelte/icons/circle-check";
   import { t } from "$lib/stores/i18n";
   import trackEvent from "$lib/beacon";
   import ICONS from "$lib/icons";
   import Captcha from "./Captcha.svelte";
+  import MonitorSelector from "./MonitorSelector.svelte";
 
   interface Props {
     compact?: boolean;
@@ -45,12 +44,13 @@
 
   // Preferences data
   let subscriberEmail = $state("");
-  let incidentsEnabled = $state(false);
-  let maintenancesEnabled = $state(false);
-  let availableSubscriptions = $state<{ incidents: boolean; maintenances: boolean }>({
-    incidents: false,
-    maintenances: false
-  });
+  // The persisted selection, and the working copy the user edits before saving.
+  let subscribedMonitorTags = $state<string[]>([]);
+  let selectedMonitorTags = $state<string[]>([]);
+  let availableMonitors = $state<{ tag: string; name: string }[]>([]);
+  let isLoadingPreferences = $state(false);
+  let isSavingPreferences = $state(false);
+  let successMessage = $state("");
 
   // Check token on mount
   onMount(() => {
@@ -88,9 +88,10 @@
 
       const data = await response.json();
       subscriberEmail = data.email || "";
-      incidentsEnabled = data.subscriptions?.incidents || false;
-      maintenancesEnabled = data.subscriptions?.maintenances || false;
-      availableSubscriptions = data.availableSubscriptions || { incidents: false, maintenances: false };
+      subscribedMonitorTags = data.monitors || [];
+      selectedMonitorTags = [...subscribedMonitorTags];
+      availableMonitors = data.availableMonitors || [];
+      successMessage = "";
       currentView = "preferences";
     } catch (err) {
       localStorage.removeItem(STORAGE_KEY);
@@ -182,12 +183,16 @@
     }
   }
 
-  async function handlePreferenceChange(type: "incidents" | "maintenances", value: boolean) {
+  async function handleSaveMonitors() {
     const token = localStorage.getItem(STORAGE_KEY);
     if (!token) {
       currentView = "login";
       return;
     }
+
+    isSavingPreferences = true;
+    errorMessage = "";
+    successMessage = "";
 
     try {
       const response = await fetch(clientResolver(resolve, "/dashboard-apis/subscription"), {
@@ -196,38 +201,28 @@
         body: JSON.stringify({
           action: "updatePreferences",
           token,
-          [type]: value
+          monitorTags: selectedMonitorTags
         })
       });
 
       if (!response.ok) {
         const data = await response.json();
-        errorMessage = $t("Failed to update preference");
-        // Revert the toggle
-        if (type === "incidents") {
-          incidentsEnabled = !value;
-        } else {
-          maintenancesEnabled = !value;
-        }
+        errorMessage = data?.message || $t("Failed to update preferences");
         return;
       }
 
-      // Update local state
-      if (type === "incidents") {
-        incidentsEnabled = value;
-      } else {
-        maintenancesEnabled = value;
-      }
-
-      trackEvent("subscribe_pref_toggled", { source: "subscribe_menu", type, value });
+      const data = await response.json();
+      subscribedMonitorTags = data.monitors || selectedMonitorTags;
+      selectedMonitorTags = [...subscribedMonitorTags];
+      successMessage = $t("Your monitor subscriptions have been saved.");
+      trackEvent("subscribe_monitors_saved", {
+        source: "subscribe_menu",
+        count: subscribedMonitorTags.length
+      });
     } catch (err) {
       errorMessage = $t("Network error. Please try again.");
-      // Revert the toggle
-      if (type === "incidents") {
-        incidentsEnabled = !value;
-      } else {
-        maintenancesEnabled = !value;
-      }
+    } finally {
+      isSavingPreferences = false;
     }
   }
 
@@ -236,8 +231,10 @@
     email = "";
     otpValue = "";
     subscriberEmail = "";
-    incidentsEnabled = false;
-    maintenancesEnabled = false;
+    subscribedMonitorTags = [];
+    selectedMonitorTags = [];
+    availableMonitors = [];
+    successMessage = "";
     errorMessage = "";
     currentView = "login";
     trackEvent("subscribe_logout", { source: "subscribe_menu" });
@@ -252,6 +249,7 @@
   function handleClose() {
     open = false;
     errorMessage = "";
+    successMessage = "";
   }
 
   // Google reCAPTCHA's expanded image-challenge renders as a second iframe
@@ -266,6 +264,12 @@
       event.preventDefault();
     }
   }
+
+  // True when the working selection differs from what is saved.
+  let hasUnsavedChanges = $derived(
+    selectedMonitorTags.length !== subscribedMonitorTags.length ||
+      selectedMonitorTags.some((tag) => !subscribedMonitorTags.includes(tag))
+  );
 </script>
 
 {#if compact}
@@ -300,29 +304,29 @@
 <Dialog.Root bind:open>
   <Dialog.Overlay class="backdrop-blur-[2px]" />
   <Dialog.Content
-    class="max-w-sm rounded-3xl"
+    class="flex max-h-[85vh] max-w-md flex-col overflow-hidden rounded-3xl"
     onInteractOutside={ignoreCaptchaIframeInteraction}
     onFocusOutside={ignoreCaptchaIframeInteraction}
   >
-    <Dialog.Header>
+    <Dialog.Header class="shrink-0">
       <Dialog.Title class="flex items-center gap-2">
         <Bell class="h-5 w-5" />
         {$t("Subscribe to Updates")}
       </Dialog.Title>
       <Dialog.Description>
         {#if currentView === "login"}
-          {$t("Get notified about incidents and scheduled maintenance.")}
+          {$t("Get notified about the monitors you care about.")}
         {:else if currentView === "otp"}
           {$t("Enter the verification code sent to your email.")}
         {:else if currentView === "preferences"}
-          {$t("Manage your notification preferences.")}
+          {$t("Choose the monitors you want to be notified about.")}
         {:else if currentView === "loading"}
           {$t("Loading your preferences...")}
         {/if}
       </Dialog.Description>
     </Dialog.Header>
 
-    <div class="py-4">
+    <div class="min-h-0 flex-1 overflow-y-auto py-4">
       {#if currentView === "loading"}
         <div class="flex items-center justify-center py-8">
           <Loader2 class="text-muted-foreground h-8 w-8 animate-spin" />
@@ -408,57 +412,59 @@
           </Button>
         </div>
       {:else if currentView === "preferences"}
-        <!-- Preferences View -->
-        <div class="flex flex-col gap-6">
-          <div class="rounded-lg border p-4">
-            <div class="flex items-center justify-between gap-2">
-              <div class="flex gap-2">
-                <Mail class="text-muted-foreground h-4 w-4" />
-                <span class="text-sm font-medium">{subscriberEmail}</span>
-              </div>
-              <Button variant="ghost" size="icon-sm" onclick={handleLogout} class="rounded-btn">
-                <LogOut class="h-4 w-4" />
-              </Button>
+        <!-- Preferences View: monitor-based subscriptions -->
+        <div class="flex flex-col gap-4">
+          <div class="flex items-center justify-between gap-2 rounded-lg border p-3">
+            <div class="flex min-w-0 items-center gap-2">
+              <Mail class="text-muted-foreground h-4 w-4 shrink-0" />
+              <span class="truncate text-sm font-medium">{subscriberEmail}</span>
             </div>
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              onclick={handleLogout}
+              class="rounded-btn"
+              aria-label={$t("Log out")}
+            >
+              <LogOut class="h-4 w-4" />
+            </Button>
           </div>
 
-          <div class="flex flex-col gap-4">
-            {#if availableSubscriptions.incidents}
-              <div class="flex items-center justify-between">
-                <div class="flex items-center gap-3">
-                  <AlertTriangle class="h-5 w-5 text-orange-500" />
-                  <div>
-                    <Label class="font-medium">{$t("Incident Updates")}</Label>
-                    <p class="text-muted-foreground text-xs">{$t("Get notified about incidents updates")}</p>
-                  </div>
-                </div>
-                <Switch
-                  checked={incidentsEnabled}
-                  onCheckedChange={(value) => handlePreferenceChange("incidents", value)}
-                />
-              </div>
-            {/if}
-
-            {#if availableSubscriptions.maintenances}
-              <div class="flex items-center justify-between">
-                <div class="flex items-center gap-3">
-                  <Wrench class="h-5 w-5 text-blue-500" />
-                  <div>
-                    <Label class="font-medium">{$t("Maintenance Updates")}</Label>
-                    <p class="text-muted-foreground text-xs">{$t("Get notified about scheduled maintenance")}</p>
-                  </div>
-                </div>
-                <Switch
-                  checked={maintenancesEnabled}
-                  onCheckedChange={(value) => handlePreferenceChange("maintenances", value)}
-                />
-              </div>
-            {/if}
-          </div>
+          {#if isLoadingPreferences}
+            <div class="flex items-center justify-center py-8">
+              <Loader2 class="text-muted-foreground h-6 w-6 animate-spin" />
+            </div>
+          {:else}
+            <MonitorSelector
+              monitors={availableMonitors}
+              bind:selected={selectedMonitorTags}
+              loading={isLoadingPreferences}
+              listClass="max-h-64 md:max-h-72"
+              disabled={isSavingPreferences}
+            />
+          {/if}
 
           {#if errorMessage}
             <p class="text-destructive text-sm">{errorMessage}</p>
           {/if}
+
+          {#if successMessage}
+            <p class="flex items-center gap-2 text-sm text-emerald-600 dark:text-emerald-400">
+              <CircleCheck class="h-4 w-4" />
+              {successMessage}
+            </p>
+          {/if}
+
+          <Button onclick={handleSaveMonitors} disabled={isSavingPreferences} class="w-full">
+            {#if isSavingPreferences}
+              <Loader2 class="mr-2 h-4 w-4 animate-spin" />
+              {$t("Saving...")}
+            {:else if hasUnsavedChanges}
+              {$t("Save preferences")}
+            {:else}
+              {$t("Saved")}
+            {/if}
+          </Button>
         </div>
       {/if}
     </div>

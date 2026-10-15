@@ -109,6 +109,8 @@ import {
   AdminUpdateSubscriptionStatus,
   AdminDeleteSubscriber,
   AdminAddSubscriber,
+  AdminSetSubscriberMonitors,
+  GetAvailableMonitors,
 } from "$lib/server/controllers/userSubscriptionsController.js";
 import {
   GetAllGeneralEmailTemplates,
@@ -553,9 +555,18 @@ export async function POST({ request, cookies }) {
             created_at: s.created_at,
             updated_at: s.updated_at,
           })),
+          monitorSubscriptions: result.monitorSubscriptions.map((m) => ({
+            id: m.id,
+            subscriber_user_id: m.subscriber_user_id,
+            subscriber_method_id: m.subscriber_method_id,
+            monitor_tag: m.monitor_tag,
+            status: m.status,
+            created_at: m.created_at,
+            updated_at: m.updated_at,
+          })),
         };
       } else {
-        resp = { subscriber: null, subscriptions: [] };
+        resp = { subscriber: null, subscriptions: [], monitorSubscriptions: [] };
       }
     } else if (action == "getSubscriberCountsByMethod") {
       resp = await GetSubscriberCountsByMethod();
@@ -624,14 +635,30 @@ export async function POST({ request, cookies }) {
         throw new Error(resp.error);
       }
     } else if (action == "adminAddSubscriber") {
-      const { email, incidents, maintenances } = data;
+      const { email, incidents, maintenances, monitorTags } = data;
       if (!email) {
         throw new Error("Email is required");
       }
-      resp = await AdminAddSubscriber(email, incidents ?? false, maintenances ?? false);
+      resp = await AdminAddSubscriber(
+        email,
+        Array.isArray(monitorTags) ? monitorTags : [],
+        incidents ?? false,
+        maintenances ?? false,
+      );
       if (!resp.success) {
         throw new Error(resp.error);
       }
+    } else if (action == "adminSetSubscriberMonitors") {
+      const { methodId, monitorTags } = data;
+      if (!methodId) {
+        throw new Error("Method ID is required");
+      }
+      resp = await AdminSetSubscriberMonitors(methodId, Array.isArray(monitorTags) ? monitorTags : []);
+      if (!resp.success) {
+        throw new Error(resp.error);
+      }
+    } else if (action == "getAvailableMonitors") {
+      resp = await GetAvailableMonitors();
     } else if (action == "getSubscriptionsConfig") {
       let subscriptionsSettings = await GetSiteDataByKey("subscriptionsSettings");
       if (!!!subscriptionsSettings) {

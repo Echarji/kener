@@ -380,6 +380,16 @@ class DbImpl {
   getSubscribersByMethodTypeV2!: SubscriptionSystemRepository["getSubscribersByMethodTypeV2"];
   getSubscriberDetailsByMethodId!: SubscriptionSystemRepository["getSubscriberDetailsByMethodId"];
 
+  // ============ Monitor Subscriptions (subscriber_monitors) ============
+  createSubscriberMonitor!: SubscriptionSystemRepository["createSubscriberMonitor"];
+  getSubscriberMonitorById!: SubscriptionSystemRepository["getSubscriberMonitorById"];
+  getSubscriberMonitors!: SubscriptionSystemRepository["getSubscriberMonitors"];
+  updateSubscriberMonitor!: SubscriptionSystemRepository["updateSubscriberMonitor"];
+  deleteSubscriberMonitor!: SubscriptionSystemRepository["deleteSubscriberMonitor"];
+  deleteSubscriberMonitorsByMethodId!: SubscriptionSystemRepository["deleteSubscriberMonitorsByMethodId"];
+  getSubscribersForMonitors!: SubscriptionSystemRepository["getSubscribersForMonitors"];
+  setSubscriberMonitors!: SubscriptionSystemRepository["setSubscriberMonitors"];
+
   // ============ General Email Templates ============
   insertEmailTemplate!: EmailTemplateConfigRepository["insertEmailTemplate"];
   updateEmailTemplate!: EmailTemplateConfigRepository["updateEmailTemplate"];
@@ -853,6 +863,18 @@ class DbImpl {
     this.getSubscriberDetailsByMethodId = this.subscriptionSystem.getSubscriberDetailsByMethodId.bind(
       this.subscriptionSystem,
     );
+
+    // Monitor Subscriptions (subscriber_monitors)
+    this.createSubscriberMonitor = this.subscriptionSystem.createSubscriberMonitor.bind(this.subscriptionSystem);
+    this.getSubscriberMonitorById = this.subscriptionSystem.getSubscriberMonitorById.bind(this.subscriptionSystem);
+    this.getSubscriberMonitors = this.subscriptionSystem.getSubscriberMonitors.bind(this.subscriptionSystem);
+    this.updateSubscriberMonitor = this.subscriptionSystem.updateSubscriberMonitor.bind(this.subscriptionSystem);
+    this.deleteSubscriberMonitor = this.subscriptionSystem.deleteSubscriberMonitor.bind(this.subscriptionSystem);
+    this.deleteSubscriberMonitorsByMethodId = this.subscriptionSystem.deleteSubscriberMonitorsByMethodId.bind(
+      this.subscriptionSystem,
+    );
+    this.getSubscribersForMonitors = this.subscriptionSystem.getSubscribersForMonitors.bind(this.subscriptionSystem);
+    this.setSubscriberMonitors = this.subscriptionSystem.setSubscriberMonitors.bind(this.subscriptionSystem);
   }
 
   private bindEmailTemplateConfigMethods(): void {

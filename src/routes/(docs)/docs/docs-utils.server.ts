@@ -1,4 +1,4 @@
-import fm from "front-matter";
+import { parseFrontMatter } from "$lib/server/frontmatter";
 import type {
   DocsConfig,
   DocsTableOfContentsItem,
@@ -595,7 +595,7 @@ export function parseMarkdownWithFrontMatter(slug: string): {
   const rawContent = getRawMarkdownContent(slug);
   if (!rawContent) return null;
 
-  const parsed = fm<DocsFrontMatter>(rawContent);
+  const parsed = parseFrontMatter<DocsFrontMatter>(rawContent);
   return {
     body: parsed.body,
     attributes: parsed.attributes,

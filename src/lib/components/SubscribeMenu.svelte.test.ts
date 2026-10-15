@@ -33,10 +33,7 @@ describe("SubscribeMenu — captcha gating", () => {
   });
 
   it("leaves Continue enabled when no captcha provider is configured", async () => {
-    vi.stubGlobal(
-      "fetch",
-      mockFetchByUrl({ "captcha-config.json": async () => ({ provider: null, siteKey: null }) }),
-    );
+    vi.stubGlobal("fetch", mockFetchByUrl({ "captcha-config.json": async () => ({ provider: null, siteKey: null }) }));
 
     const screen = await render(SubscribeMenu, {});
     await screen.getByRole("button", { name: "Subscribe" }).click();
@@ -144,5 +141,117 @@ describe("SubscribeMenu — captcha gating", () => {
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     delete (window as any).turnstile;
+  });
+});
+
+describe("SubscribeMenu — monitor preferences", () => {
+  beforeEach(() => {
+    localStorage.clear();
+    localStorage.setItem("subscriber_token", "subscriber-token-1");
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  function stubSubscriptionFetch(handlers: {
+    getPreferences?: () => unknown;
+    updatePreferences?: (body: { monitorTags?: string[] }) => unknown;
+  }) {
+    const calls: Array<{ action: string; monitorTags?: string[] }> = [];
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      if (url.includes("captcha-config.json")) {
+        return { ok: true, json: async () => ({}) } as Response;
+      }
+      if (url.includes("dashboard-apis/subscription")) {
+        const body = init?.body ? JSON.parse(init.body as string) : {};
+        calls.push(body);
+        if (body.action === "getPreferences") {
+          return { ok: true, json: async () => handlers.getPreferences?.() ?? {} } as Response;
+        }
+        if (body.action === "updatePreferences") {
+          return { ok: true, json: async () => handlers.updatePreferences?.(body) ?? { success: true } } as Response;
+        }
+      }
+      throw new Error(`Unhandled fetch in test: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    return calls;
+  }
+
+  it("loads the subscriber's monitors and marks them selected", async () => {
+    stubSubscriptionFetch({
+      getPreferences: () => ({
+        email: "alice@example.com",
+        monitors: ["api"],
+        availableMonitors: [
+          { tag: "api", name: "API" },
+          { tag: "web", name: "Website" },
+        ],
+      }),
+    });
+
+    const screen = await render(SubscribeMenu, {});
+    await screen.getByRole("button", { name: "Subscribe" }).click();
+
+    await expect.element(screen.getByText("alice@example.com")).toBeInTheDocument();
+    await expect.element(screen.getByRole("button", { name: /API/ })).toHaveAttribute("aria-pressed", "true");
+    await expect.element(screen.getByRole("button", { name: /Website/ })).toHaveAttribute("aria-pressed", "false");
+    await expect.element(screen.getByText(/1\s+selected/)).toBeInTheDocument();
+  });
+
+  it("saves the edited monitor selection and confirms it", async () => {
+    const calls = stubSubscriptionFetch({
+      getPreferences: () => ({
+        email: "alice@example.com",
+        monitors: ["api"],
+        availableMonitors: [
+          { tag: "api", name: "API" },
+          { tag: "web", name: "Website" },
+        ],
+      }),
+      updatePreferences: (body) => ({ success: true, monitors: body.monitorTags }),
+    });
+
+    const screen = await render(SubscribeMenu, {});
+    await screen.getByRole("button", { name: "Subscribe" }).click();
+
+    // Wait for the preferences view to settle before interacting.
+    await expect.element(screen.getByRole("button", { name: /Website/ })).toHaveAttribute("aria-pressed", "false");
+
+    await screen.getByRole("button", { name: /Website/ }).click();
+    await screen.getByRole("button", { name: "Save preferences" }).click();
+
+    await expect.element(screen.getByText("Your monitor subscriptions have been saved.")).toBeInTheDocument();
+    await expect.element(screen.getByRole("button", { name: "Saved" })).toBeInTheDocument();
+
+    const update = calls.find((call) => call.action === "updatePreferences");
+    expect(update?.monitorTags?.slice().sort()).toEqual(["api", "web"]);
+  });
+
+  it("clears every monitor subscription", async () => {
+    const calls = stubSubscriptionFetch({
+      getPreferences: () => ({
+        email: "alice@example.com",
+        monitors: ["api", "web"],
+        availableMonitors: [
+          { tag: "api", name: "API" },
+          { tag: "web", name: "Website" },
+        ],
+      }),
+      updatePreferences: (body) => ({ success: true, monitors: body.monitorTags }),
+    });
+
+    const screen = await render(SubscribeMenu, {});
+    await screen.getByRole("button", { name: "Subscribe" }).click();
+
+    await expect.element(screen.getByText(/2\s+selected/)).toBeInTheDocument();
+
+    await screen.getByRole("button", { name: "Clear" }).click();
+    await screen.getByRole("button", { name: "Save preferences" }).click();
+
+    await expect.element(screen.getByText("Your monitor subscriptions have been saved.")).toBeInTheDocument();
+    const update = calls.find((call) => call.action === "updatePreferences");
+    expect(update?.monitorTags).toEqual([]);
   });
 });

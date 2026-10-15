@@ -11,6 +11,9 @@ import type {
   UserSubscriptionV2RecordInsert,
   UserSubscriptionV2Filter,
   SubscriptionEventType,
+  SubscriberMonitorRecord,
+  SubscriberMonitorRecordInsert,
+  SubscriberMonitorFilter,
   DbTimestamp,
 } from "../../types/db.js";
 import { GetDbType } from "../../tool.js";
@@ -234,6 +237,136 @@ export class SubscriptionSystemRepository extends BaseRepository {
     return !!result;
   }
 
+  // ============ Monitor Subscriptions (subscriber_monitors) ============
+
+  async createSubscriberMonitor(data: SubscriberMonitorRecordInsert): Promise<SubscriberMonitorRecord> {
+    const dbType = GetDbType();
+    const insertData = {
+      subscriber_user_id: data.subscriber_user_id,
+      subscriber_method_id: data.subscriber_method_id,
+      monitor_tag: data.monitor_tag,
+      status: data.status || "ACTIVE",
+      created_at: this.knex.fn.now(),
+      updated_at: this.knex.fn.now(),
+    };
+
+    if (dbType === "postgresql") {
+      const [monitor] = await this.knex("subscriber_monitors").insert(insertData).returning("*");
+      return monitor;
+    } else {
+      const result = await this.knex("subscriber_monitors").insert(insertData);
+      const id = result[0];
+      return (await this.getSubscriberMonitorById(id))!;
+    }
+  }
+
+  async getSubscriberMonitorById(id: number): Promise<SubscriberMonitorRecord | undefined> {
+    return await this.knex("subscriber_monitors").where("id", id).first();
+  }
+
+  async getSubscriberMonitors(filter: SubscriberMonitorFilter): Promise<SubscriberMonitorRecord[]> {
+    let query = this.knex("subscriber_monitors").select("*");
+
+    if (filter.subscriber_user_id !== undefined) {
+      query = query.where("subscriber_user_id", filter.subscriber_user_id);
+    }
+    if (filter.subscriber_method_id !== undefined) {
+      query = query.where("subscriber_method_id", filter.subscriber_method_id);
+    }
+    if (filter.monitor_tag !== undefined) {
+      query = query.where("monitor_tag", filter.monitor_tag);
+    }
+    if (filter.monitor_tags !== undefined) {
+      query = query.whereIn("monitor_tag", filter.monitor_tags);
+    }
+    if (filter.status !== undefined) {
+      query = query.where("status", filter.status);
+    }
+
+    return await query.orderBy("created_at", "desc");
+  }
+
+  async updateSubscriberMonitor(id: number, data: Partial<SubscriberMonitorRecordInsert>): Promise<number> {
+    const updateData: Record<string, unknown> = {
+      updated_at: this.knex.fn.now(),
+    };
+    if (data.monitor_tag !== undefined) updateData.monitor_tag = data.monitor_tag;
+    if (data.status !== undefined) updateData.status = data.status;
+
+    return await this.knex("subscriber_monitors").where("id", id).update(updateData);
+  }
+
+  async deleteSubscriberMonitor(id: number): Promise<number> {
+    return await this.knex("subscriber_monitors").where("id", id).del();
+  }
+
+  async deleteSubscriberMonitorsByMethodId(subscriberMethodId: number): Promise<number> {
+    return await this.knex("subscriber_monitors").where("subscriber_method_id", subscriberMethodId).del();
+  }
+
+  /**
+   * Resolve every active subscriber (user + delivery method) that follows at least one of the
+   * given monitors. This is the core recipient query for monitor-based notifications.
+   */
+  async getSubscribersForMonitors(monitorTags: string[]): Promise<
+    Array<{
+      user: SubscriberUserRecord;
+      method: SubscriberMethodRecord;
+      monitor_tag: string;
+    }>
+  > {
+    if (!monitorTags || monitorTags.length === 0) {
+      return [];
+    }
+
+    const rows = await this.knex("subscriber_monitors as sm")
+      .join("subscriber_users as su", "sm.subscriber_user_id", "su.id")
+      .join("subscriber_methods as smethods", "sm.subscriber_method_id", "smethods.id")
+      .whereIn("sm.monitor_tag", monitorTags)
+      .andWhere("sm.status", "ACTIVE")
+      .andWhere("su.status", "ACTIVE")
+      .andWhere("smethods.status", "ACTIVE")
+      .select(
+        "su.id as user_id",
+        "su.email as user_email",
+        "su.status as user_status",
+        "su.created_at as user_created_at",
+        "smethods.id as method_id",
+        "smethods.method_type",
+        "smethods.method_value",
+        "smethods.status as method_status",
+        "smethods.meta as method_meta",
+        "smethods.created_at as method_created_at",
+        "sm.id as monitor_sub_id",
+        "sm.monitor_tag",
+        "sm.status as monitor_sub_status",
+        "sm.created_at as monitor_sub_created_at",
+      );
+
+    return rows.map((row) => ({
+      user: {
+        id: row.user_id,
+        email: row.user_email,
+        status: row.user_status,
+        verification_code: null,
+        verification_expires_at: null,
+        created_at: row.user_created_at,
+        updated_at: row.user_created_at,
+      },
+      method: {
+        id: row.method_id,
+        subscriber_user_id: row.user_id,
+        method_type: row.method_type,
+        method_value: row.method_value,
+        status: row.method_status,
+        meta: row.method_meta,
+        created_at: row.method_created_at,
+        updated_at: row.method_created_at,
+      },
+      monitor_tag: row.monitor_tag,
+    }));
+  }
+
   // ============ Complex Queries ============
 
   /**
@@ -414,6 +547,8 @@ export class SubscriptionSystemRepository extends BaseRepository {
       created_at: DbTimestamp;
       subscription_count: number;
       event_types: SubscriptionEventType[];
+      monitor_tags: string[];
+      monitor_count: number;
     }>
   > {
     // Get methods of this type with their users
@@ -442,6 +577,12 @@ export class SubscriptionSystemRepository extends BaseRepository {
         .distinct("event_type")
         .pluck("event_type");
 
+      const monitorTags = await this.knex("subscriber_monitors")
+        .where("subscriber_method_id", method.method_id)
+        .andWhere("status", "ACTIVE")
+        .distinct("monitor_tag")
+        .pluck("monitor_tag");
+
       result.push({
         id: method.user_id,
         email: method.email,
@@ -451,6 +592,8 @@ export class SubscriptionSystemRepository extends BaseRepository {
         created_at: method.created_at,
         subscription_count: Number(subCount?.count || 0),
         event_types: eventTypes as SubscriptionEventType[],
+        monitor_tags: monitorTags as string[],
+        monitor_count: monitorTags.length,
       });
     }
 
@@ -464,6 +607,7 @@ export class SubscriptionSystemRepository extends BaseRepository {
     user: SubscriberUserRecord;
     method: SubscriberMethodRecord;
     subscriptions: UserSubscriptionV2Record[];
+    monitorSubscriptions: SubscriberMonitorRecord[];
   } | null> {
     const method = await this.knex("subscriber_methods").where("id", methodId).first();
     if (!method) return null;
@@ -476,6 +620,44 @@ export class SubscriptionSystemRepository extends BaseRepository {
       .andWhere("status", "ACTIVE")
       .orderBy("created_at", "desc");
 
-    return { user, method, subscriptions };
+    const monitorSubscriptions = await this.knex("subscriber_monitors")
+      .where("subscriber_method_id", methodId)
+      .andWhere("status", "ACTIVE")
+      .orderBy("created_at", "desc");
+
+    return { user, method, subscriptions, monitorSubscriptions };
+  }
+
+  /**
+   * Atomically replace the set of monitors a delivery method is subscribed to. Passing an empty
+   * array clears all subscriptions. Only valid, active monitor tags are persisted.
+   */
+  async setSubscriberMonitors(
+    subscriberUserId: number,
+    subscriberMethodId: number,
+    monitorTags: string[],
+  ): Promise<SubscriberMonitorRecord[]> {
+    const uniqueTags = Array.from(new Set((monitorTags || []).filter((tag) => !!tag)));
+
+    await this.knex.transaction(async (trx) => {
+      await trx("subscriber_monitors").where("subscriber_method_id", subscriberMethodId).del();
+      if (uniqueTags.length === 0) return;
+
+      const rows = uniqueTags.map((monitor_tag) => ({
+        subscriber_user_id: subscriberUserId,
+        subscriber_method_id: subscriberMethodId,
+        monitor_tag,
+        status: "ACTIVE" as const,
+        created_at: trx.fn.now(),
+        updated_at: trx.fn.now(),
+      }));
+
+      await trx("subscriber_monitors").insert(rows);
+    });
+
+    return await this.knex("subscriber_monitors")
+      .where("subscriber_method_id", subscriberMethodId)
+      .andWhere("status", "ACTIVE")
+      .orderBy("created_at", "desc");
   }
 }

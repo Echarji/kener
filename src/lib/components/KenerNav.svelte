@@ -31,7 +31,7 @@
 </script>
 
 <div class="fixed inset-x-0 top-0 z-10 py-2">
-  <div class="mx-auto max-w-5xl px-4">
+  <div class="container mx-auto px-4">
     <div
       class="bg-background/80 dark:bg-background/70 flex items-center justify-between rounded-3xl border p-1 backdrop-blur-md"
     >

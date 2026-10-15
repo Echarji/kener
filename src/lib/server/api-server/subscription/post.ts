@@ -8,6 +8,7 @@ import {
   VerifySubscriberOTP,
   VerifySubscriberToken,
   UpdateSubscriberPreferences,
+  GetAvailableMonitors,
 } from "$lib/server/controllers/userSubscriptionsController";
 
 interface LoginRequest {
@@ -32,6 +33,7 @@ interface UpdatePreferencesRequest {
   token: string;
   incidents?: boolean;
   maintenances?: boolean;
+  monitorTags?: string[];
 }
 
 type PostRequestBody = LoginRequest | VerifyRequest | GetPreferencesRequest | UpdatePreferencesRequest;
@@ -63,6 +65,7 @@ export default async function post(req: APIServerRequest): Promise<Response> {
         (body as UpdatePreferencesRequest).token,
         (body as UpdatePreferencesRequest).incidents,
         (body as UpdatePreferencesRequest).maintenances,
+        (body as UpdatePreferencesRequest).monitorTags,
         config,
       );
     default:
@@ -111,10 +114,14 @@ async function handleGetPreferences(token: string, config: SubscriptionsConfig):
     return error(401, { message: result.error || "Invalid token" });
   }
 
+  const availableMonitors = await GetAvailableMonitors();
+
   return json({
     success: true,
     email: result.user?.email,
     subscriptions: result.subscriptions,
+    monitors: result.monitor_tags || [],
+    availableMonitors: availableMonitors.map((m) => ({ tag: m.tag, name: m.name })),
     availableSubscriptions: {
       incidents: config.methods?.emails?.incidents === true,
       maintenances: config.methods?.emails?.maintenances === true,
@@ -126,11 +133,16 @@ async function handleUpdatePreferences(
   token: string,
   incidents: boolean | undefined,
   maintenances: boolean | undefined,
+  monitorTags: string[] | undefined,
   config: SubscriptionsConfig,
 ): Promise<Response> {
-  // Only allow updating subscriptions that are enabled in config
-  const preferences: { incidents?: boolean; maintenances?: boolean } = {};
+  // Monitor-based subscriptions are the primary flow now; legacy event-type toggles are still
+  // honoured when provided so older clients keep working.
+  const preferences: { incidents?: boolean; maintenances?: boolean; monitorTags?: string[] } = {};
 
+  if (Array.isArray(monitorTags)) {
+    preferences.monitorTags = monitorTags;
+  }
   if (incidents !== undefined && config.methods?.emails?.incidents) {
     preferences.incidents = incidents;
   }
@@ -143,5 +155,5 @@ async function handleUpdatePreferences(
     return error(400, { message: result.error || "Failed to update preferences" });
   }
 
-  return json({ success: true });
+  return json({ success: true, monitors: result.monitor_tags });
 }

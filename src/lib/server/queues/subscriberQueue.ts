@@ -9,7 +9,7 @@ import { GetAllSiteData } from "../controllers/controller.js";
 import { siteDataToVariables } from "../notification/notification_utils.js";
 import type { SubscriptionVariableMap } from "../notification/types.js";
 import { GetGeneralEmailTemplateById } from "../controllers/generalTemplateController.js";
-import { GetActiveEmailsForEventType } from "../controllers/userSubscriptionsController.js";
+import { GetActiveEmailsForEventType, GetActiveEmailsForMonitors } from "../controllers/userSubscriptionsController.js";
 import emailQueue from "./emailQueue.js";
 let subscriberQueue: Queue | null = null;
 let worker: Worker | null = null;
@@ -42,18 +42,33 @@ const addWorker = () => {
       if (!template) {
         throw new Error("Subscription email template not found");
       }
-      const emailVars = {
-        ...templateSiteVars,
-        ...variables,
-      };
+      const emailVars = (() => {
+        // monitor_tags/monitor_names are only used to resolve recipients in this worker; the
+        // email template engine expects scalars, so keep monitor_list (a string) instead.
+        const { monitor_tags: _monitorTags, monitor_names: _monitorNames, ...templateVars } = variables;
+        return {
+          ...templateSiteVars,
+          ...templateVars,
+        };
+      })();
 
       const eventType = variables.event_type;
 
-      // Get active subscriber emails for this event type
-      const subscriberEmails = await GetActiveEmailsForEventType(eventType);
+      // Resolve recipients. Monitor-based subscriptions take precedence: when the event carries
+      // affected monitor tags only the subscribers of those monitors are notified. Falling back
+      // to the legacy event-type query keeps any not-yet-migrated trigger working.
+      const monitorTags = variables.monitor_tags || [];
+      const subscriberEmails =
+        monitorTags.length > 0
+          ? await GetActiveEmailsForMonitors(monitorTags)
+          : await GetActiveEmailsForEventType(eventType);
 
       if (subscriberEmails.length === 0) {
-        console.log(`📭 No active subscribers for event type: ${eventType}`);
+        console.log(
+          monitorTags.length > 0
+            ? `📭 No active subscribers for monitors: ${monitorTags.join(", ")}`
+            : `📭 No active subscribers for event type: ${eventType}`,
+        );
         return;
       }
 
@@ -68,7 +83,11 @@ const addWorker = () => {
         });
       }
 
-      console.log(`📮 Queued ${subscriberEmails.length} subscription email(s) for event: ${eventType}`);
+      console.log(
+        `📮 Queued ${subscriberEmails.length} subscription email(s) for ${
+          monitorTags.length > 0 ? `monitors: ${monitorTags.join(", ")}` : `event: ${eventType}`
+        }`,
+      );
     } catch (error) {
       console.error("Error processing subscriber queue job:", error);
       throw error;
@@ -107,8 +126,10 @@ export const push = async (variables: SubscriptionVariableMap, options?: JobsOpt
   const queue = getQueue();
   addWorker();
 
-  // Use deduplication to prevent duplicate notifications
-  const deDupId = `subscriber-${variables.event_type}-${variables.update_id}-${Date.now()}`;
+  // Use deduplication to prevent duplicate notifications for the same event. The id is derived
+  // from the event type + update id (which already includes the affected monitor for status
+  // changes), so retried pushes collapse into a single delivery.
+  const deDupId = `subscriber-${variables.event_type}-${variables.update_id}`;
   if (!options.deduplication) {
     options.deduplication = {
       id: deDupId,

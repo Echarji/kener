@@ -9,8 +9,10 @@ import type {
   UserSubscriptionV2Record,
   SubscriberUserRecord,
   SubscriberMethodRecord,
+  SubscriberMonitorRecord,
   DbTimestamp,
 } from "$lib/server/types/db.js";
+import GC from "$lib/global-constants.js";
 
 // ============ V2 Admin Functions ============
 
@@ -79,6 +81,7 @@ export async function GetSubscriberWithSubscriptionsV2(methodId: number): Promis
   user: SubscriberUserRecord;
   method: SubscriberMethodRecord;
   subscriptions: UserSubscriptionV2Record[];
+  monitorSubscriptions: SubscriberMonitorRecord[];
 } | null> {
   return await db.getSubscriberDetailsByMethodId(methodId);
 }
@@ -113,6 +116,8 @@ export function FormatEventType(eventType: SubscriptionEventType): string {
       return "Incident Updates";
     case "maintenances":
       return "Maintenance Updates";
+    case "status":
+      return "Monitor Status Updates";
     default:
       return eventType;
   }
@@ -128,6 +133,8 @@ export interface AdminSubscriberRecord {
   maintenances_enabled: boolean;
   incidents_subscription_id: number | null;
   maintenances_subscription_id: number | null;
+  monitor_tags: string[];
+  monitor_count: number;
   created_at: DbTimestamp;
 }
 
@@ -169,6 +176,8 @@ export async function GetAdminSubscribersPaginated(
       maintenances_enabled: maintenancesSub?.status === "ACTIVE",
       incidents_subscription_id: incidentsSub?.id || null,
       maintenances_subscription_id: maintenancesSub?.id || null,
+      monitor_tags: item.monitor_tags || [],
+      monitor_count: item.monitor_count || 0,
       created_at: item.created_at,
     });
   }
@@ -259,12 +268,16 @@ export async function AdminDeleteSubscriber(methodId: number): Promise<{ success
 }
 
 /**
- * Admin: Add a new subscriber with specified subscriptions
+ * Admin: Add a new subscriber with specified subscriptions.
+ *
+ * `monitorTags` is the monitor-based selection. `incidents` / `maintenances` are retained for
+ * backwards compatibility with the legacy event-type toggles.
  */
 export async function AdminAddSubscriber(
   email: string,
-  incidents: boolean,
-  maintenances: boolean,
+  monitorTags: string[] = [],
+  incidents: boolean = false,
+  maintenances: boolean = false,
 ): Promise<{ success: boolean; error?: string; subscriber?: AdminSubscriberRecord }> {
   if (!ValidateEmail(email)) {
     return { success: false, error: "Invalid email address" };
@@ -298,7 +311,10 @@ export async function AdminAddSubscriber(
     await db.updateSubscriberMethod(method.id, { status: "ACTIVE" });
   }
 
-  // Create/update subscriptions
+  // Replace monitor subscriptions with the provided selection
+  const savedMonitors = await SetSubscriberMonitors(user.id, method.id, monitorTags || []);
+
+  // Create/update legacy event subscriptions
   let incidentsSub = null;
   let maintenancesSub = null;
 
@@ -348,9 +364,69 @@ export async function AdminAddSubscriber(
       maintenances_enabled: maintenances,
       incidents_subscription_id: incidentsSub?.id || null,
       maintenances_subscription_id: maintenancesSub?.id || null,
+      monitor_tags: savedMonitors.map((m) => m.monitor_tag),
+      monitor_count: savedMonitors.length,
       created_at: method.created_at,
     },
   };
+}
+
+/**
+ * Persist the set of monitors a subscriber's delivery method follows. Only valid, active,
+ * non-hidden monitor tags are saved so a stale client cannot subscribe to a deleted monitor.
+ */
+export async function SetSubscriberMonitors(
+  subscriberUserId: number,
+  subscriberMethodId: number,
+  monitorTags: string[],
+): Promise<SubscriberMonitorRecord[]> {
+  const requested = Array.from(new Set((monitorTags || []).map((tag) => String(tag).trim()).filter(Boolean)));
+  if (requested.length === 0) {
+    return await db.setSubscriberMonitors(subscriberUserId, subscriberMethodId, []);
+  }
+
+  const monitors = await db.getMonitors({ status: GC.ACTIVE, is_hidden: GC.NO });
+  const validTags = new Set(monitors.map((m) => m.tag));
+  const accepted = requested.filter((tag) => validTags.has(tag));
+
+  return await db.setSubscriberMonitors(subscriberUserId, subscriberMethodId, accepted);
+}
+
+/**
+ * Admin: Replace the monitor subscriptions for a subscriber method.
+ */
+export async function AdminSetSubscriberMonitors(
+  methodId: number,
+  monitorTags: string[],
+): Promise<{ success: boolean; error?: string }> {
+  const method = await db.getSubscriberMethodById(methodId);
+  if (!method) {
+    return { success: false, error: "Subscriber not found" };
+  }
+
+  await SetSubscriberMonitors(method.subscriber_user_id, methodId, monitorTags || []);
+  return { success: true };
+}
+
+/**
+ * List the monitors a user can subscribe to (active and not hidden).
+ */
+export async function GetAvailableMonitors(): Promise<
+  Array<{ tag: string; name: string; category_name: string | null }>
+> {
+  const monitors = await db.getMonitors({ status: GC.ACTIVE, is_hidden: GC.NO });
+  return monitors
+    .map((m) => ({ tag: m.tag, name: m.name, category_name: m.category_name }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/**
+ * Tags of every monitor that can be subscribed to. Used when an incident or maintenance is
+ * global (affects all monitors).
+ */
+export async function GetAllSubscribableMonitorTags(): Promise<string[]> {
+  const monitors = await db.getMonitors({ status: GC.ACTIVE, is_hidden: GC.NO });
+  return monitors.map((m) => m.tag);
 }
 
 /**
@@ -364,6 +440,25 @@ export async function GetActiveEmailsForEventType(eventType: SubscriptionEventTy
   const emails = subscribers.filter((s) => s.method.method_type === "email").map((s) => s.method.method_value);
 
   // Return unique emails
+  return [...new Set(emails)];
+}
+
+/**
+ * Get active email addresses for the subscribers of the given monitors. This is the
+ * monitor-based replacement for {@link GetActiveEmailsForEventType}: a recipient is included
+ * only when at least one of their subscribed monitors is affected.
+ */
+export async function GetActiveEmailsForMonitors(monitorTags: string[]): Promise<string[]> {
+  if (!monitorTags || monitorTags.length === 0) {
+    return [];
+  }
+
+  const subscribers = await db.getSubscribersForMonitors(monitorTags);
+
+  const emails = subscribers
+    .filter((s) => s.method.method_type === "email" && s.method.method_value)
+    .map((s) => s.method.method_value);
+
   return [...new Set(emails)];
 }
 
@@ -392,6 +487,7 @@ export async function VerifySubscriberToken(token: string): Promise<{
   user?: SubscriberUserRecord;
   method?: SubscriberMethodRecord;
   subscriptions?: { incidents: boolean; maintenances: boolean };
+  monitor_tags?: string[];
 }> {
   const decoded = await VerifyToken(token);
   if (!decoded || (decoded as unknown as SubscriberTokenPayload).type !== "subscriber") {
@@ -420,7 +516,15 @@ export async function VerifySubscriberToken(token: string): Promise<{
     maintenances: allSubs.some((s) => s.event_type === "maintenances" && s.status === "ACTIVE"),
   };
 
-  return { success: true, user, method, subscriptions };
+  // Monitor-based subscriptions
+  const monitorSubs = await db.getSubscriberMonitors({
+    subscriber_user_id: user.id,
+    subscriber_method_id: method.id,
+    status: "ACTIVE",
+  });
+  const monitor_tags = monitorSubs.map((s) => s.monitor_tag);
+
+  return { success: true, user, method, subscriptions, monitor_tags };
 }
 
 /**
@@ -550,14 +654,20 @@ export async function VerifySubscriberOTP(
  */
 export async function UpdateSubscriberPreferences(
   token: string,
-  preferences: { incidents?: boolean; maintenances?: boolean },
-): Promise<{ success: boolean; error?: string }> {
+  preferences: { incidents?: boolean; maintenances?: boolean; monitorTags?: string[] },
+): Promise<{ success: boolean; error?: string; monitor_tags?: string[] }> {
   const verifyResult = await VerifySubscriberToken(token);
   if (!verifyResult.success || !verifyResult.user || !verifyResult.method) {
     return { success: false, error: verifyResult.error || "Invalid token" };
   }
 
   const { user, method } = verifyResult;
+
+  // Handle monitor-based subscriptions: the provided list replaces the current selection.
+  if (preferences.monitorTags !== undefined) {
+    const saved = await SetSubscriberMonitors(user.id, method.id, preferences.monitorTags);
+    return { success: true, monitor_tags: saved.map((m) => m.monitor_tag) };
+  }
 
   // Handle incidents subscription
   if (preferences.incidents !== undefined) {

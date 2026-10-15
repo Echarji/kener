@@ -1,5 +1,5 @@
 import nodemailer from "nodemailer";
-import type { Transporter } from "nodemailer";
+import type { SMTPTransportOptions, Transporter } from "nodemailer";
 import { HashString } from "../tool.js";
 import type { TriggerRecord, MonitorRecord } from "../types/db.js";
 import type { SMTPConfiguration } from "./types.js";
@@ -15,13 +15,7 @@ export default function getSMTPTransport(meta: SMTPConfiguration): Transporter {
     return transports[transportId];
   }
 
-  let options: nodemailer.TransportOptions & {
-    host: string;
-    port: number;
-    secure?: boolean;
-    auth?: { user: string; pass: string };
-    tls: { rejectUnauthorized: boolean };
-  } = {
+  let options: SMTPTransportOptions = {
     host: meta.smtp_host,
     port: meta.smtp_port || 587,
     secure: meta.smtp_secure, // true for 465, false for other ports

@@ -23,6 +23,8 @@
   import Wrench from "@lucide/svelte/icons/wrench";
   import Mail from "@lucide/svelte/icons/mail";
   import Rss from "@lucide/svelte/icons/rss";
+  import Pencil from "@lucide/svelte/icons/pencil";
+  import MonitorSelector from "$lib/components/MonitorSelector.svelte";
 
   import type { SubscriptionsConfig } from "$lib/server/types/db.js";
   import AlertCircleIcon from "@lucide/svelte/icons/octagon-alert";
@@ -107,6 +109,8 @@
     maintenances_enabled: boolean;
     incidents_subscription_id: number | null;
     maintenances_subscription_id: number | null;
+    monitor_tags: string[];
+    monitor_count: number;
     created_at: string;
   }
 
@@ -117,21 +121,27 @@
   let total = $state(0);
   let totalPages = $state(0);
 
+  // The monitor catalog used by the add/manage pickers.
+  let availableMonitors = $state<{ tag: string; name: string }[]>([]);
+  let loadingMonitors = $state(true);
+
   // Add subscriber dialog
   let showAddDialog = $state(false);
   let addingSubscriber = $state(false);
   let newEmail = $state("");
-  let newIncidents = $state(true);
-  let newMaintenances = $state(true);
+  let newMonitorTags = $state<string[]>([]);
   let addError = $state("");
+
+  // Manage monitors dialog
+  let showManageDialog = $state(false);
+  let managingSubscriber = $state<Subscriber | null>(null);
+  let manageMonitorTags = $state<string[]>([]);
+  let savingManage = $state(false);
 
   // Delete confirmation
   let showDeleteDialog = $state(false);
   let deletingSubscriber = $state<Subscriber | null>(null);
   let isDeleting = $state(false);
-
-  // Updating toggles
-  let updatingToggle = $state<Record<string, boolean>>({});
 
   // Fetch config
   async function fetchConfig() {
@@ -195,51 +205,25 @@
     }
   }
 
-  // Toggle subscription status
-  async function toggleSubscription(subscriber: Subscriber, eventType: "incidents" | "maintenances", enabled: boolean) {
-    const key = `${subscriber.method_id}-${eventType}`;
-    updatingToggle[key] = true;
-
+  // Fetch the monitor catalog available for subscription
+  async function fetchAvailableMonitors() {
+    loadingMonitors = true;
     try {
       const res = await fetch(clientResolver(resolve, "/manage/api"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "adminUpdateSubscriptionStatus",
-          data: {
-            methodId: subscriber.method_id,
-            eventType,
-            enabled
-          }
-        })
+        body: JSON.stringify({ action: "getAvailableMonitors" })
       });
       const result = await res.json();
-      if (result.error) {
-        toast.error(result.error);
-        // Revert toggle
-        if (eventType === "incidents") {
-          subscriber.incidents_enabled = !enabled;
-        } else {
-          subscriber.maintenances_enabled = !enabled;
-        }
-      } else {
-        // Update local state
-        if (eventType === "incidents") {
-          subscriber.incidents_enabled = enabled;
-        } else {
-          subscriber.maintenances_enabled = enabled;
-        }
+      if (Array.isArray(result)) {
+        availableMonitors = result;
+      } else if (Array.isArray(result?.data)) {
+        availableMonitors = result.data;
       }
     } catch (error) {
-      toast.error("Failed to update subscription");
-      // Revert
-      if (eventType === "incidents") {
-        subscriber.incidents_enabled = !enabled;
-      } else {
-        subscriber.maintenances_enabled = !enabled;
-      }
+      toast.error("Failed to load monitors");
     } finally {
-      updatingToggle[key] = false;
+      loadingMonitors = false;
     }
   }
 
@@ -261,8 +245,7 @@
           action: "adminAddSubscriber",
           data: {
             email: newEmail.trim(),
-            incidents: newIncidents,
-            maintenances: newMaintenances
+            monitorTags: newMonitorTags
           }
         })
       });
@@ -284,9 +267,51 @@
 
   function resetAddForm() {
     newEmail = "";
-    newIncidents = true;
-    newMaintenances = true;
+    newMonitorTags = [];
     addError = "";
+  }
+
+  // Open the manage-monitors dialog for a subscriber
+  function openManageMonitors(subscriber: Subscriber) {
+    managingSubscriber = subscriber;
+    manageMonitorTags = [...(subscriber.monitor_tags || [])];
+    showManageDialog = true;
+  }
+
+  // Save the monitor selection for the subscriber being managed
+  async function saveManagedMonitors() {
+    if (!managingSubscriber) return;
+
+    savingManage = true;
+    try {
+      const res = await fetch(clientResolver(resolve, "/manage/api"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "adminSetSubscriberMonitors",
+          data: {
+            methodId: managingSubscriber.method_id,
+            monitorTags: manageMonitorTags
+          }
+        })
+      });
+      const result = await res.json();
+      if (result.error) {
+        toast.error(result.error);
+        return;
+      }
+
+      managingSubscriber.monitor_tags = [...manageMonitorTags];
+      managingSubscriber.monitor_count = manageMonitorTags.length;
+      showManageDialog = false;
+      managingSubscriber = null;
+      toast.success("Monitor subscriptions updated");
+      await fetchSubscribers();
+    } catch (error) {
+      toast.error("Failed to update monitor subscriptions");
+    } finally {
+      savingManage = false;
+    }
   }
 
   // Delete subscriber
@@ -337,6 +362,7 @@
     fetchConfig();
     fetchSubMenuOptions();
     fetchSubscribers();
+    fetchAvailableMonitors();
   });
 </script>
 
@@ -437,8 +463,8 @@
                 <div class="space-y-0.5">
                   <Label for="enable-rss-feed" class="mb-0">Show RSS feed link</Label>
                   <p class="text-muted-foreground text-xs">
-                    Adds an RSS icon to the public page header. The feed routes
-                    (<code class="text-xs">/rss.xml</code>) remain reachable either way.
+                    Adds an RSS icon to the public page header. The feed routes (<code class="text-xs">/rss.xml</code>)
+                    remain reachable either way.
                   </p>
                 </div>
                 <Switch
@@ -480,18 +506,7 @@
           <Table.Header>
             <Table.Row>
               <Table.Head>Email</Table.Head>
-              <Table.Head class="text-center">
-                <div class="flex items-center justify-center gap-1">
-                  <AlertTriangle class="h-4 w-4 text-orange-500" />
-                  Incidents
-                </div>
-              </Table.Head>
-              <Table.Head class="text-center">
-                <div class="flex items-center justify-center gap-1">
-                  <Wrench class="h-4 w-4 text-blue-500" />
-                  Maintenances
-                </div>
-              </Table.Head>
+              <Table.Head>Monitors</Table.Head>
               <Table.Head>Subscribed At</Table.Head>
               <Table.Head class="w-20 text-center">Actions</Table.Head>
             </Table.Row>
@@ -499,7 +514,7 @@
           <Table.Body>
             {#if loadingSubscribers && subscribers.length === 0}
               <Table.Row>
-                <Table.Cell colspan={5} class="py-8 text-center">
+                <Table.Cell colspan={4} class="py-8 text-center">
                   <div class="flex items-center justify-center gap-2">
                     <Spinner class="size-4" />
                     <span class="text-muted-foreground text-sm">Loading subscribers...</span>
@@ -508,7 +523,7 @@
               </Table.Row>
             {:else if subscribers.length === 0}
               <Table.Row>
-                <Table.Cell colspan={5} class="text-muted-foreground py-8 text-center">
+                <Table.Cell colspan={4} class="text-muted-foreground py-8 text-center">
                   No subscribers yet. Add your first subscriber above.
                 </Table.Cell>
               </Table.Row>
@@ -516,19 +531,24 @@
               {#each subscribers as subscriber (subscriber.method_id)}
                 <Table.Row>
                   <Table.Cell class="font-medium">{subscriber.email}</Table.Cell>
-                  <Table.Cell class="text-center">
-                    <Switch
-                      checked={subscriber.incidents_enabled}
-                      disabled={updatingToggle[`${subscriber.method_id}-incidents`]}
-                      onCheckedChange={(e) => toggleSubscription(subscriber, "incidents", e)}
-                    />
-                  </Table.Cell>
-                  <Table.Cell class="text-center">
-                    <Switch
-                      checked={subscriber.maintenances_enabled}
-                      disabled={updatingToggle[`${subscriber.method_id}-maintenances`]}
-                      onCheckedChange={(e) => toggleSubscription(subscriber, "maintenances", e)}
-                    />
+                  <Table.Cell>
+                    <div class="flex items-center gap-2">
+                      <span class="text-muted-foreground text-sm">
+                        {subscriber.monitor_count ?? subscriber.monitor_tags?.length ?? 0}
+                        {(subscriber.monitor_count ?? subscriber.monitor_tags?.length ?? 0) === 1
+                          ? "monitor"
+                          : "monitors"}
+                      </span>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        class="h-7 px-2 text-xs"
+                        onclick={() => openManageMonitors(subscriber)}
+                      >
+                        <Pencil class="h-3 w-3" />
+                        Manage
+                      </Button>
+                    </div>
                   </Table.Cell>
                   <Table.Cell>
                     <LocalTime value={subscriber.created_at} format="MMM d, yyyy" />
@@ -605,21 +625,18 @@
           disabled={addingSubscriber}
         />
       </div>
-      <div class="space-y-4">
-        <div class="flex items-center justify-between">
-          <div class="flex items-center gap-2">
-            <AlertTriangle class="h-4 w-4 text-orange-500" />
-            <Label for="new-incidents" class="mb-0">Subscribe to Incidents</Label>
-          </div>
-          <Switch id="new-incidents" bind:checked={newIncidents} disabled={addingSubscriber} />
-        </div>
-        <div class="flex items-center justify-between">
-          <div class="flex items-center gap-2">
-            <Wrench class="h-4 w-4 text-blue-500" />
-            <Label for="new-maintenances" class="mb-0">Subscribe to Maintenances</Label>
-          </div>
-          <Switch id="new-maintenances" bind:checked={newMaintenances} disabled={addingSubscriber} />
-        </div>
+      <div class="space-y-2">
+        <Label>Monitors</Label>
+        <p class="text-muted-foreground text-xs">
+          Choose the monitors this subscriber should be notified about. Leave empty to subscribe to nothing yet.
+        </p>
+        <MonitorSelector
+          monitors={availableMonitors}
+          bind:selected={newMonitorTags}
+          loading={loadingMonitors}
+          listClass="max-h-64"
+          disabled={addingSubscriber}
+        />
       </div>
       {#if addError}
         <Alert.Root variant="destructive">
@@ -644,6 +661,49 @@
           Adding...
         {:else}
           Add Subscriber
+        {/if}
+      </Button>
+    </Dialog.Footer>
+  </Dialog.Content>
+</Dialog.Root>
+
+<!-- Manage Monitors Dialog -->
+<Dialog.Root bind:open={showManageDialog}>
+  <Dialog.Content class="flex max-h-[85vh] flex-col overflow-hidden sm:max-w-md">
+    <Dialog.Header class="shrink-0">
+      <Dialog.Title>Manage Monitor Subscriptions</Dialog.Title>
+      <Dialog.Description>
+        {#if managingSubscriber}
+          Choose the monitors <span class="font-medium">{managingSubscriber.email}</span> should be notified about.
+        {/if}
+      </Dialog.Description>
+    </Dialog.Header>
+    <div class="min-h-0 flex-1 overflow-y-auto py-4">
+      <MonitorSelector
+        monitors={availableMonitors}
+        bind:selected={manageMonitorTags}
+        loading={loadingMonitors}
+        listClass="max-h-64"
+        disabled={savingManage}
+      />
+    </div>
+    <Dialog.Footer class="shrink-0">
+      <Button
+        variant="outline"
+        onclick={() => {
+          showManageDialog = false;
+          managingSubscriber = null;
+        }}
+        disabled={savingManage}
+      >
+        Cancel
+      </Button>
+      <Button onclick={saveManagedMonitors} disabled={savingManage}>
+        {#if savingManage}
+          <Spinner class="size-4" />
+          Saving...
+        {:else}
+          Save
         {/if}
       </Button>
     </Dialog.Footer>

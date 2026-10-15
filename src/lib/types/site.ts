@@ -81,7 +81,7 @@ export interface SiteSubscriptionsSettings {
   methods: {
     emails: {
       incidents: boolean;
-      maintenance: boolean;
+      maintenances: boolean;
     };
   };
 }

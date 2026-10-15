@@ -460,7 +460,7 @@ export const UpdateCommentByID = async (
 // choke point; alertingQueue must not push its own incident notifications, or
 // alert-driven incidents would notify twice.
 const notifySubscribersOfComment = async (
-  incident: Pick<IncidentRecord, "id" | "title">,
+  incident: Pick<IncidentRecord, "id" | "title" | "is_global">,
   comment: IncidentCommentRecord,
 ): Promise<void> => {
   try {
@@ -468,9 +468,25 @@ const notifySubscribersOfComment = async (
     const siteUrl = siteDataToVariables(siteData).site_url;
     // Failing to read the impact must not cost the mail itself; it goes out without the flags.
     let impact = "";
+    // The monitors the incident affects decide which subscribers are notified. Reading them
+    // failing must not block the mail, so it degrades to no monitor filter.
+    let monitorTags: string[] = [];
+    let monitorNames: string[] = [];
     try {
-      const impacts = (await db.getIncidentMonitorsByIncidentID(incident.id)).map((m) => m.monitor_impact);
+      const monitors = await db.getIncidentMonitorsByIncidentID(incident.id);
+      const impacts = monitors.map((m) => m.monitor_impact);
       impact = impacts.includes(GC.DOWN) ? GC.DOWN : impacts.includes(GC.DEGRADED) ? GC.DEGRADED : "";
+      monitorTags = monitors.map((m) => m.monitor_tag).filter(Boolean);
+      // A global incident with no explicit monitors touches every monitor; if it lists
+      // monitors we honour those so alert-driven incidents stay scoped to their monitor.
+      if (monitorTags.length === 0 && incident.is_global === GC.YES) {
+        const allMonitors = await db.getMonitors({ status: GC.ACTIVE, is_hidden: GC.NO });
+        monitorTags = allMonitors.map((m) => m.tag);
+      }
+      if (monitorTags.length > 0) {
+        const monitorRecords = await db.getMonitorsByTags(monitorTags);
+        monitorNames = monitorRecords.map((m) => m.name).filter(Boolean);
+      }
     } catch (err) {
       console.error(`Error reading monitors of incident ${incident.id} for its subscriber mail:`, err);
     }
@@ -490,6 +506,9 @@ const notifySubscribersOfComment = async (
       incident_impact: impact,
       is_down: impact === GC.DOWN,
       is_degraded: impact === GC.DEGRADED,
+      monitor_tags: monitorTags,
+      monitor_names: monitorNames,
+      monitor_list: monitorNames.join(", "),
     };
     // Stable dedup id per comment so a retried/double push notifies once — without
     // it subscriberQueue falls back to a Date.now()-suffixed id that never dedupes.
