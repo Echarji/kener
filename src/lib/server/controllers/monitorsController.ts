@@ -37,6 +37,7 @@ import alertingQueue from "../queues/alertingQueue.js";
 import { CollapseStatusCounts } from "../../clientTools.js";
 import { translate, isLocaleAvailable } from "../i18n.js";
 import type { HeartbeatMonitor, GroupMonitorTypeData } from "../types/monitor.js";
+import type { PageMonitorLayoutStyle } from "../../types/api.js";
 import { IsValidProxyURL, IsValidHeartbeatSecret, HEARTBEAT_SECRET_RULE } from "../../anywhere.js";
 
 interface GroupUpdateData {
@@ -499,6 +500,17 @@ export const RegisterHeartbeat = async (tag: string, secret: string): Promise<st
   }
   throw new Error("Invalid heartbeat secret");
 };
+
+/**
+ * Resolves a GROUP monitor's saved layout style. Unknown or missing values fall
+ * back to `default-list`, which is the layout groups had before the option
+ * existed, so existing groups keep their current appearance.
+ */
+export function ResolveGroupMonitorLayoutStyle(value: unknown): PageMonitorLayoutStyle {
+  return typeof value === "string" && (GC.MONITOR_LAYOUT_STYLES as readonly string[]).includes(value)
+    ? (value as PageMonitorLayoutStyle)
+    : GC.DEFAULT_MONITOR_LAYOUT_STYLE;
+}
 
 /**
  * Removes a monitor tag from all GROUP monitors that reference it,

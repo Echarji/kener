@@ -12,8 +12,13 @@ import type { TimestampStatusCount } from "$lib/server/types/db";
 import { GetNowTimestampUTC, UptimeCalculator } from "$lib/server/tool";
 import GC from "$lib/global-constants.js";
 import { GetStatusColor, GetStatusSummary, ParseLatency, ResolveSslExpiresAtMs } from "$lib/clientTools";
-import { AttachSslCacheFields, GetMonitorsParsed } from "$lib/server/controllers/monitorsController";
+import {
+  AttachSslCacheFields,
+  GetMonitorsParsed,
+  ResolveGroupMonitorLayoutStyle,
+} from "$lib/server/controllers/monitorsController";
 import type { GroupMonitorTypeData } from "$lib/server/types/monitor";
+import type { PageMonitorLayoutStyle } from "$lib/types/api";
 
 export const load: PageServerLoad = async ({ params, parent }) => {
   const { monitor_tag } = params;
@@ -63,10 +68,12 @@ export const load: PageServerLoad = async ({ params, parent }) => {
   //get status summary
   let extendedTags: string[] = [];
   let monitorGroupMembersByTag: Record<string, string[]> = {};
+  let groupLayoutStyle: PageMonitorLayoutStyle = GC.DEFAULT_MONITOR_LAYOUT_STYLE;
   if (monitor.monitor_type === "GROUP") {
     const groupData = monitor.type_data as GroupMonitorTypeData;
     const memberTags = groupData.monitors.map((m) => m.tag);
     extendedTags = extendedTags.concat(memberTags);
+    groupLayoutStyle = ResolveGroupMonitorLayoutStyle(groupData.layoutStyle);
   }
 
   if (extendedTags.length > 0) {
@@ -111,6 +118,7 @@ export const load: PageServerLoad = async ({ params, parent }) => {
       externalUrl: monitor.external_url,
       extendedTags,
       monitorGroupMembersByTag,
+      groupLayoutStyle,
       maxDays,
       monitorSharingOptions: {
         showShareBadgeMonitor: monitor.monitor_settings_json?.sharing_options?.showShareBadgeMonitor ?? true,

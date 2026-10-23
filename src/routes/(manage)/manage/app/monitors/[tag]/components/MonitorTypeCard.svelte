@@ -11,6 +11,8 @@
   import type { GroupMonitorTypeData, MonitoringResult } from "$lib/server/types/monitor.js";
   import type { DockerConnectionDefaults } from "$lib/types/docker.js";
   import { MONITOR_TYPES, type MonitorType } from "$lib/types/monitor.js";
+  import type { PageMonitorLayoutStyle } from "$lib/types/api";
+  import GC from "$lib/global-constants.js";
   import { toast } from "svelte-sonner";
   import {
     ValidateIpAddress,
@@ -66,11 +68,16 @@
     return typeof value === "string" && GROUP_LATENCY_CALCULATION_OPTIONS.includes(value as GroupLatencyCalculation);
   }
 
+  function isGroupLayoutStyle(value: unknown): value is PageMonitorLayoutStyle {
+    return typeof value === "string" && GC.MONITOR_LAYOUT_STYLES.includes(value as PageMonitorLayoutStyle);
+  }
+
   function createDefaultGroupTypeData(): GroupMonitorTypeData {
     return {
       monitors: [],
       executionDelay: GROUP_MIN_TIMEOUT_MS,
-      latencyCalculation: "AVG"
+      latencyCalculation: "AVG",
+      layoutStyle: GC.DEFAULT_MONITOR_LAYOUT_STYLE
     };
   }
 
@@ -93,6 +100,10 @@
       ? candidate.latencyCalculation
       : "AVG";
 
+    const layoutStyle = isGroupLayoutStyle(candidate.layoutStyle)
+      ? candidate.layoutStyle
+      : GC.DEFAULT_MONITOR_LAYOUT_STYLE;
+
     const executionDelay =
       typeof candidate.executionDelay === "number" &&
       Number.isFinite(candidate.executionDelay) &&
@@ -103,7 +114,8 @@
     return {
       monitors,
       latencyCalculation,
-      executionDelay
+      executionDelay,
+      layoutStyle
     };
   }
 
@@ -197,6 +209,7 @@
         if (!data.monitors || !Array.isArray(data.monitors) || data.monitors.length < GROUP_MIN_MONITORS) return false;
         if (typeof data.executionDelay !== "number" || data.executionDelay < GROUP_MIN_TIMEOUT_MS) return false;
         if (!isGroupLatencyCalculation((data as GroupMonitorTypeData).latencyCalculation)) return false;
+        if (data.layoutStyle !== undefined && !isGroupLayoutStyle(data.layoutStyle)) return false;
         // Weights must sum to 1
         const totalWeight = data.monitors.reduce((sum, m) => sum + (m.weight ?? 0), 0);
         if (Math.abs(totalWeight - 1) >= 0.01) return false;

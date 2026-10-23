@@ -17,6 +17,7 @@
   } from "$lib/clientTools.js";
   import { getSslNowMs } from "$lib/client/sslClock.svelte";
   import GroupMonitorPopover from "./GroupMonitorPopover.svelte";
+  import type { PageMonitorLayoutStyle } from "$lib/types/api";
   import { t } from "$lib/stores/i18n";
   import { page } from "$app/state";
 
@@ -25,6 +26,7 @@
     prefetchedData?: MonitorBarResponse;
     prefetchedError?: string;
     groupChildTags?: string[];
+    groupLayoutStyle?: PageMonitorLayoutStyle;
     days?: number;
     endOfDayTodayAtTz?: number;
     compact?: boolean;
@@ -36,6 +38,7 @@
     prefetchedData,
     prefetchedError,
     groupChildTags = [],
+    groupLayoutStyle,
     days,
     endOfDayTodayAtTz,
     compact = false,
@@ -178,6 +181,7 @@
       <div class="mt-2 flex justify-center gap-2 px-4">
         <GroupMonitorPopover
           tags={groupChildTags}
+          layoutStyle={groupLayoutStyle}
           days={days as number}
           endOfDayTodayAtTz={endOfDayTodayAtTz as number}
         >

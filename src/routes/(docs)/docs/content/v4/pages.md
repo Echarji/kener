@@ -64,6 +64,8 @@ Choose one layout:
 
 Click **Save Preferences** after changes.
 
+Group monitors can use their own display theme for their members; see [Group Monitor](/docs/v4/monitors/group#display-theme).
+
 ## Social preview and SEO {#social-preview-and-seo}
 
 Each page can override the site-level SEO defaults set in [Site Configuration](/docs/v4/setup/site-configuration#social-preview-and-seo).

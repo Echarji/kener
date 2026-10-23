@@ -7,6 +7,8 @@
   import MonitorPicker from "$lib/components/MonitorPicker.svelte";
   import type { MonitorRecord } from "$lib/server/types/db.js";
   import type { GroupMonitorMember } from "$lib/server/types/monitor.js";
+  import type { PageMonitorLayoutStyle } from "$lib/types/api";
+  import GC from "$lib/global-constants.js";
   import ArrowUp from "@lucide/svelte/icons/arrow-up";
   import ArrowDown from "@lucide/svelte/icons/arrow-down";
   import GripVertical from "@lucide/svelte/icons/grip-vertical";
@@ -22,10 +24,19 @@
     MIN: "Minimum (fastest)"
   };
 
+  const LAYOUT_STYLE_LABELS: Record<PageMonitorLayoutStyle, string> = {
+    "default-list": "Default List",
+    "default-grid": "Default Grid",
+    "compact-list": "Compact List",
+    "compact-grid": "Compact Grid"
+  };
+  const PREVIEW_MONITOR_LIMIT = 6;
+
   type GroupMonitorFormData = {
     monitors: GroupMonitorMember[];
     executionDelay: number;
     latencyCalculation: LatencyCalculationOption;
+    layoutStyle: PageMonitorLayoutStyle;
   };
 
   let {
@@ -50,6 +61,9 @@
   if (!LATENCY_CALCULATION_OPTIONS.includes(formData.latencyCalculation)) {
     formData.latencyCalculation = "AVG";
   }
+  if (!GC.MONITOR_LAYOUT_STYLES.includes(formData.layoutStyle)) {
+    formData.layoutStyle = GC.DEFAULT_MONITOR_LAYOUT_STYLE;
+  }
 
   let executionDelayInput = $state(String(formData.executionDelay));
   const parsedExecutionDelay = $derived.by(() => {
@@ -73,6 +87,8 @@
 
   let totalWeight = $derived(Math.round(formData.monitors.reduce((sum, m) => sum + m.weight, 0) * 1000) / 1000);
   let weightsValid = $derived(Math.abs(totalWeight - 1) < 0.001 || formData.monitors.length === 0);
+  let previewIsGrid = $derived(formData.layoutStyle === "default-grid" || formData.layoutStyle === "compact-grid");
+  let previewIsCompact = $derived(formData.layoutStyle === "compact-list" || formData.layoutStyle === "compact-grid");
 
   function isSelected(monitorTag: string): boolean {
     return formData.monitors.some((m) => m.tag === monitorTag);
@@ -224,6 +240,51 @@
         </Select.Content>
       </Select.Root>
       <p class="text-muted-foreground text-xs">Choose how latency should be derived from the selected monitors.</p>
+    </div>
+
+    <div class="space-y-2">
+      <Label for="group-layout-style">Display theme</Label>
+      <Select.Root
+        type="single"
+        value={formData.layoutStyle}
+        onValueChange={(value) => {
+          if (value && GC.MONITOR_LAYOUT_STYLES.includes(value as PageMonitorLayoutStyle)) {
+            formData.layoutStyle = value as PageMonitorLayoutStyle;
+          }
+        }}
+      >
+        <Select.Trigger id="group-layout-style" class="w-full">
+          {LAYOUT_STYLE_LABELS[formData.layoutStyle]}
+        </Select.Trigger>
+        <Select.Content>
+          {#each GC.MONITOR_LAYOUT_STYLES as option (option)}
+            <Select.Item value={option}>{LAYOUT_STYLE_LABELS[option]}</Select.Item>
+          {/each}
+        </Select.Content>
+      </Select.Root>
+      <p class="text-muted-foreground text-xs">
+        Choose how this group's monitors are displayed when the group is expanded on the status page. Default List keeps
+        the original layout.
+      </p>
+      {#if formData.monitors.length > 0}
+        <div class="bg-muted/40 rounded-lg border p-2">
+          <p class="text-muted-foreground mb-2 text-xs font-medium">Preview</p>
+          <div class={previewIsGrid ? "grid grid-cols-2 gap-1" : "flex flex-col gap-1"}>
+            {#each formData.monitors.slice(0, PREVIEW_MONITOR_LIMIT) as m (m.tag)}
+              <div
+                class="bg-background truncate rounded border px-2 {previewIsCompact
+                  ? 'py-0.5 text-[11px]'
+                  : 'py-1 text-xs'}"
+              >
+                {availableMonitors.find((am) => am.tag === m.tag)?.name || m.tag}
+              </div>
+            {/each}
+          </div>
+          {#if formData.monitors.length > PREVIEW_MONITOR_LIMIT}
+            <p class="text-muted-foreground mt-1 text-xs">+{formData.monitors.length - PREVIEW_MONITOR_LIMIT} more</p>
+          {/if}
+        </div>
+      {/if}
     </div>
   </div>
 

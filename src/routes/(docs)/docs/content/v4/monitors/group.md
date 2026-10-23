@@ -63,11 +63,24 @@ Group latency uses selected mode:
 
 ## Configuration fields {#configuration-fields}
 
-| Field                | Type                   | Default | Notes                                          |
-| :------------------- | :--------------------- | :------ | :--------------------------------------------- |
-| `monitors`           | `Array<{tag, weight}>` | `[]`    | Required, min 2                                |
-| `executionDelay`     | `number`               | `1000`  | ms to wait before aggregating; must be >= 1000 |
-| `latencyCalculation` | `AVG\|MAX\|MIN`        | `AVG`   |                                                |
+| Field                | Type                   | Default        | Notes                                               |
+| :------------------- | :--------------------- | :------------- | :-------------------------------------------------- |
+| `monitors`           | `Array<{tag, weight}>` | `[]`           | Required, min 2                                     |
+| `executionDelay`     | `number`               | `1000`         | ms to wait before aggregating; must be >= 1000      |
+| `latencyCalculation` | `AVG\|MAX\|MIN`        | `AVG`          |                                                     |
+| `layoutStyle`        | `string`               | `default-list` | How the member monitors are displayed when expanded |
+
+## Display theme {#display-theme}
+
+Each group controls how its member monitors are displayed when expanded on the status page. The values match the page
+[monitor layout styles](/docs/v4/pages#monitor-layout-style):
+
+- `default-list` — one member per row with its status history (default)
+- `default-grid` — member cards in a responsive grid
+- `compact-list` — one member per row without the status history
+- `compact-grid` — compact member cards in a responsive grid
+
+The theme is saved per group in `type_data.layoutStyle`. Groups saved before this option existed keep `default-list`.
 
 ## Example {#example}
 
@@ -81,7 +94,8 @@ Group latency uses selected mode:
             { "tag": "cache", "weight": 0.1 }
         ],
         "executionDelay": 1500,
-        "latencyCalculation": "AVG"
+        "latencyCalculation": "AVG",
+        "layoutStyle": "default-grid"
     }
 }
 ```

@@ -15,6 +15,7 @@ import {
   CreateMonitor,
   CreateUpdateMonitor,
   mergeLatestMonitoringWithSslCache,
+  ResolveGroupMonitorLayoutStyle,
 } from "./monitorsController";
 import { HEARTBEAT_SECRET_RULE } from "$lib/anywhere";
 import type { MonitoringData } from "../types/db.js";
@@ -190,5 +191,22 @@ describe("mergeLatestMonitoringWithSslCache", () => {
 
   it("returns null when the DB has no row, even if Redis still has one", () => {
     expect(mergeLatestMonitoringWithSslCache(null, { ...dbRow, ...sslFields })).toBeNull();
+  });
+});
+
+describe("ResolveGroupMonitorLayoutStyle", () => {
+  it("keeps every supported layout style", () => {
+    expect(ResolveGroupMonitorLayoutStyle("default-list")).toBe("default-list");
+    expect(ResolveGroupMonitorLayoutStyle("default-grid")).toBe("default-grid");
+    expect(ResolveGroupMonitorLayoutStyle("compact-list")).toBe("compact-list");
+    expect(ResolveGroupMonitorLayoutStyle("compact-grid")).toBe("compact-grid");
+  });
+
+  it("falls back to the list layout groups had before the option existed", () => {
+    expect(ResolveGroupMonitorLayoutStyle(undefined)).toBe("default-list");
+    expect(ResolveGroupMonitorLayoutStyle(null)).toBe("default-list");
+    expect(ResolveGroupMonitorLayoutStyle("")).toBe("default-list");
+    expect(ResolveGroupMonitorLayoutStyle("sideways")).toBe("default-list");
+    expect(ResolveGroupMonitorLayoutStyle(2)).toBe("default-list");
   });
 });

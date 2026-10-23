@@ -3,6 +3,7 @@
 import type { PingHost, PingMonitorTypeData } from "$lib/types/ping.js";
 import type { TcpHost, TcpMonitorTypeData } from "$lib/types/tcp.js";
 import type { DockerMonitorTypeData } from "$lib/types/docker.js";
+import type { PageMonitorLayoutStyle } from "$lib/types/api.js";
 
 export interface MonitoringResult {
   status: string;
@@ -91,6 +92,12 @@ export interface GroupMonitorTypeData extends Record<string, unknown> {
   monitors: GroupMonitorMember[];
   executionDelay: number;
   latencyCalculation: "AVG" | "MAX" | "MIN";
+  /**
+   * How the group's member monitors are laid out when shown.
+   * Omitted means `default-list`, which keeps the layout of groups saved
+   * before this option existed.
+   */
+  layoutStyle?: PageMonitorLayoutStyle;
 }
 
 export interface GamedigMonitorTypeData {

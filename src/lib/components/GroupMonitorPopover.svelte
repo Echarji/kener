@@ -6,17 +6,27 @@
   import { requestMonitorBar } from "$lib/client/monitor-bar-client";
   import type { MonitorBarResponse } from "$lib/server/api-server/monitor-bar/get";
   import MonitorBar from "$lib/components/MonitorBar.svelte";
+  import type { PageMonitorLayoutStyle } from "$lib/types/api";
   import { t } from "$lib/stores/i18n";
 
   interface Props {
     tags: string[];
     days: number;
     endOfDayTodayAtTz: number;
+    /** How the group's members are laid out. Omitted keeps the list layout. */
+    layoutStyle?: PageMonitorLayoutStyle;
     children: Snippet;
   }
 
-  let { tags, days, endOfDayTodayAtTz, children }: Props = $props();
+  let { tags, days, endOfDayTodayAtTz, layoutStyle, children }: Props = $props();
   let isOpen = $state(false);
+  let isGrid = $derived(layoutStyle === "default-grid" || layoutStyle === "compact-grid");
+  let isCompact = $derived(layoutStyle === "compact-list" || layoutStyle === "compact-grid");
+  let memberContainerClass = $derived(
+    isGrid
+      ? `grid grid-cols-1 gap-3 sm:grid-cols-2 ${layoutStyle === "compact-grid" ? "lg:grid-cols-3" : ""}`
+      : "flex flex-col"
+  );
   let monitorBarPromiseByTag = $derived.by(() => {
     if (!browser || !isOpen || tags.length === 0) {
       return {} as Partial<Record<string, Promise<MonitorBarResponse>>>;
@@ -43,25 +53,32 @@
       <Drawer.Header>
         <Drawer.Title>{$t("Included Monitors (%count)", { count: String(tags.length) })}</Drawer.Title>
       </Drawer.Header>
-      <div class="scrollbar-hidden flex flex-col overflow-y-auto px-4 pb-4">
+      <div class="scrollbar-hidden overflow-y-auto px-4 pb-4">
         {#if tags.length === 0}
           <div class="text-muted-foreground p-4 text-sm">{$t("No monitors available.")}</div>
         {:else}
-          {#each tags as tag, i (tag)}
-            <div class="{i < tags.length - 1 ? 'border-b' : ''} py-2 pb-4">
-              {#if monitorBarPromiseByTag[tag]}
-                {#await monitorBarPromiseByTag[tag]}
-                  <MonitorBar {tag} />
-                {:then monitorBarData}
-                  <MonitorBar {tag} prefetchedData={monitorBarData} />
-                {:catch err}
-                  <MonitorBar {tag} prefetchedError={err instanceof Error ? err.message : "Unknown error"} />
-                {/await}
-              {:else}
-                <MonitorBar {tag} />
-              {/if}
-            </div>
-          {/each}
+          <div class={memberContainerClass}>
+            {#each tags as tag, i (tag)}
+              <div class={isGrid ? "rounded-xl border p-3" : `py-2 pb-4 ${i < tags.length - 1 ? "border-b" : ""}`}>
+                {#if monitorBarPromiseByTag[tag]}
+                  {#await monitorBarPromiseByTag[tag]}
+                    <MonitorBar {tag} compact={isCompact} grid={isGrid} />
+                  {:then monitorBarData}
+                    <MonitorBar {tag} prefetchedData={monitorBarData} compact={isCompact} grid={isGrid} />
+                  {:catch err}
+                    <MonitorBar
+                      {tag}
+                      prefetchedError={err instanceof Error ? err.message : "Unknown error"}
+                      compact={isCompact}
+                      grid={isGrid}
+                    />
+                  {/await}
+                {:else}
+                  <MonitorBar {tag} compact={isCompact} grid={isGrid} />
+                {/if}
+              </div>
+            {/each}
+          </div>
         {/if}
       </div>
     </Drawer.Content>
