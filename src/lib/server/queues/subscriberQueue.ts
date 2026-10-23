@@ -9,7 +9,7 @@ import { GetAllSiteData } from "../controllers/controller.js";
 import { siteDataToVariables } from "../notification/notification_utils.js";
 import type { SubscriptionVariableMap } from "../notification/types.js";
 import { GetGeneralEmailTemplateById } from "../controllers/generalTemplateController.js";
-import { GetActiveEmailsForEventType } from "../controllers/userSubscriptionsController.js";
+import { GetActiveEmailsForMonitors } from "../controllers/userSubscriptionsController.js";
 import emailQueue from "./emailQueue.js";
 let subscriberQueue: Queue | null = null;
 let worker: Worker | null = null;
@@ -42,18 +42,21 @@ const addWorker = () => {
       if (!template) {
         throw new Error("Subscription email template not found");
       }
+
+      // Only subscribers following a monitor this event affects receive the
+      // mail. Undefined monitor_tags means the event affects every monitor
+      // (a global incident or maintenance).
+      const { monitor_tags: monitorTags, ...templateVariables } = variables;
       const emailVars = {
         ...templateSiteVars,
-        ...variables,
+        ...templateVariables,
       };
 
-      const eventType = variables.event_type;
-
-      // Get active subscriber emails for this event type
-      const subscriberEmails = await GetActiveEmailsForEventType(eventType);
+      const subscriberEmails = await GetActiveEmailsForMonitors(monitorTags);
 
       if (subscriberEmails.length === 0) {
-        console.log(`📭 No active subscribers for event type: ${eventType}`);
+        const scope = monitorTags === undefined ? "all monitors" : monitorTags.join(", ") || "no monitors";
+        console.log(`📭 No active subscribers for monitors: ${scope}`);
         return;
       }
 
@@ -68,7 +71,7 @@ const addWorker = () => {
         });
       }
 
-      console.log(`📮 Queued ${subscriberEmails.length} subscription email(s) for event: ${eventType}`);
+      console.log(`📮 Queued ${subscriberEmails.length} subscription email(s) for event: ${variables.event_type}`);
     } catch (error) {
       console.error("Error processing subscriber queue job:", error);
       throw error;

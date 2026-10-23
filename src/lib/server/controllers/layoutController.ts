@@ -14,6 +14,7 @@ import {
 import type { EventDisplaySettings, GlobalPageVisibilitySettings, SiteDateTimeFormat } from "$lib/types/site.js";
 import serverResolve from "../resolver.js";
 import { ResolveEventListPlacement } from "$lib/clientTools";
+import { IsEmailSubscriptionConfigured } from "./userSubscriptionsController.js";
 
 export interface LayoutServerData {
   isMobile: boolean;
@@ -142,11 +143,7 @@ export async function GetLayoutServerData(cookies: Cookies, request: Request): P
   // Check if subscription is enabled
   let isSubsEnabled = false;
   const subsSetting = siteData.subscriptionsSettings;
-  if (
-    subsSetting &&
-    subsSetting.enable &&
-    (subsSetting.methods.emails.incidents || subsSetting.methods.emails.maintenance)
-  ) {
+  if (subsSetting?.enable && IsEmailSubscriptionConfigured(subsSetting)) {
     isSubsEnabled = true;
   }
 

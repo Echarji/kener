@@ -878,6 +878,8 @@ export interface SubscriptionConfigUpdate {
 
 export type SubscriptionMethodType = "email";
 export type SubscriptionEventType = "incidents" | "maintenances";
+/** Event types that can be pushed to the subscriber queue. */
+export type NotificationEventType = SubscriptionEventType | "monitor_status";
 export type SubscriptionStatus = "ACTIVE" | "INACTIVE";
 export type SubscriberUserStatus = "PENDING" | "ACTIVE" | "INACTIVE";
 
@@ -945,6 +947,62 @@ export interface UserSubscriptionV2Filter {
   event_type?: SubscriptionEventType;
 
   status?: SubscriptionStatus;
+}
+
+// ============ subscriber_monitor_subscriptions table ============
+// A subscriber follows one monitor per row. Notifications for an incident,
+// maintenance, or monitor status change are sent only to the subscribers of
+// the monitors that event affects.
+
+export interface MonitorSubscriptionRecord {
+  id: number;
+  subscriber_user_id: number;
+  subscriber_method_id: number;
+  monitor_tag: string;
+  status: SubscriptionStatus;
+  created_at: DbTimestamp;
+  updated_at: DbTimestamp;
+}
+
+export interface MonitorSubscriptionRecordInsert {
+  subscriber_user_id: number;
+  subscriber_method_id: number;
+  monitor_tag: string;
+  status?: SubscriptionStatus;
+}
+
+export interface MonitorSubscriptionFilter {
+  subscriber_user_id?: number;
+  subscriber_method_id?: number;
+  monitor_tag?: string;
+  status?: SubscriptionStatus;
+}
+
+export interface MonitorSubscriptionWithMonitorRecord extends MonitorSubscriptionRecord {
+  monitor_name: string;
+  monitor_description: string | null;
+}
+
+// ============ subscription_migration_report table ============
+// Legacy V3 subscriber/subscription rows that could not be mapped with
+// confidence are recorded here instead of being dropped.
+
+export interface SubscriptionMigrationReportRecord {
+  id: number;
+  source: string;
+  source_id: number | null;
+  subscriber_email: string | null;
+  reason: string;
+  raw_data: string | null;
+  created_at: DbTimestamp;
+}
+
+export interface SubscriptionMigrationReportInsert {
+  source: string;
+  source_id?: number | null;
+  subscriber_email?: string | null;
+  reason: string;
+  raw_data?: string | null;
 }
 
 // ============ Old types (kept for compatibility) ============
@@ -1020,8 +1078,12 @@ export interface SubscriptionsConfig {
   enable: boolean;
   methods: {
     emails: {
-      incidents: boolean;
-      maintenances: boolean;
+      /** Whether email subscriptions are available. */
+      enabled?: boolean;
+      // Kept for configurations written before monitor subscriptions. When
+      // either is true, email subscriptions are treated as enabled.
+      incidents?: boolean;
+      maintenances?: boolean;
     };
   };
 }

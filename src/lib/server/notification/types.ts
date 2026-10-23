@@ -1,4 +1,4 @@
-import type { SubscriptionEventType } from "../db/dbimpl";
+import type { NotificationEventType } from "../types/db.js";
 
 export interface AlertVariableMap {
   alert_id: number;
@@ -35,7 +35,10 @@ export interface SubscriptionVariableMap {
   update_text: string;
   update_subject: string;
   update_id: string;
-  event_type: SubscriptionEventType;
+  event_type: NotificationEventType;
+  // Monitor tags this notification concerns. Undefined means every monitor
+  // (a global incident or maintenance); an empty list means none.
+  monitor_tags?: string[];
   // Flags for templates that style by what the mail is about. Mustache has no comparisons, so
   // each is a boolean a section can test; only the flags that apply are set.
   update_state?: string;

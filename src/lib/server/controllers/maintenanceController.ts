@@ -111,8 +111,11 @@ const pushMaintenanceUpdate = async (
   ]);
   if (maintenance?.is_global !== "YES" && monitors.length === 0) return;
   const monitorNames = monitors.map((m) => `${m.monitor_name}(${m.monitor_impact})`).join(", ");
+  // A global maintenance affects every monitor; otherwise only followers of
+  // the monitors it lists are emailed.
+  const monitorTags = maintenance?.is_global === "YES" ? undefined : monitors.map((m) => m.monitor_tag);
   await subscriberQueue.push(
-    maintenanceToVariables(event, monitorNames, statusMessage, updateIdSuffix, subjectPrefix, siteUrl),
+    maintenanceToVariables(event, monitorNames, statusMessage, updateIdSuffix, subjectPrefix, siteUrl, monitorTags),
   );
 };
 

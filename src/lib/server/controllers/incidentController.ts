@@ -474,15 +474,19 @@ const notifySubscribersOfComment = async (
     const siteData = await GetAllSiteData();
     const siteUrl = siteDataToVariables(siteData).site_url;
     // Failing to read the impact must not cost the mail itself; it goes out without the flags.
-    let impacts: Array<string | null> | null = null;
+    let monitors: Array<{ monitor_tag: string; monitor_impact: string | null }> | null = null;
     try {
-      impacts = (await db.getMonitorsByIncidentId(incident.id)).map((m) => m.monitor_impact);
+      monitors = await db.getMonitorsByIncidentId(incident.id);
     } catch (err) {
       console.error(`Error reading monitors of incident ${incident.id} for its subscriber mail:`, err);
     }
+    const impacts = monitors?.map((m) => m.monitor_impact) ?? null;
     // Subscribers hear only of incidents a status page shows: global, or with a monitor that is not hidden.
     if (incident.is_global !== "YES" && impacts?.length === 0) return;
     const impact = impacts?.includes(GC.DOWN) ? GC.DOWN : impacts?.includes(GC.DEGRADED) ? GC.DEGRADED : "";
+    // A global incident affects every monitor; otherwise only followers of the
+    // affected monitors are emailed.
+    const monitorTags = incident.is_global === "YES" ? undefined : (monitors ?? []).map((m) => m.monitor_tag);
     const variables: SubscriptionVariableMap = {
       title: incident.title,
       cta_url: `${siteUrl}incidents/${incident.id}`,
@@ -491,6 +495,7 @@ const notifySubscribersOfComment = async (
       update_subject: `[#${incident.id}:${comment.state}] ${incident.title}`,
       update_id: String(comment.id),
       event_type: "incidents",
+      monitor_tags: monitorTags,
       update_state: comment.state,
       is_investigating: comment.state === GC.INVESTIGATING,
       is_identified: comment.state === GC.IDENTIFIED,

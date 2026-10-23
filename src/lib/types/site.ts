@@ -80,8 +80,10 @@ export interface SiteSubscriptionsSettings {
   enable: boolean;
   methods: {
     emails: {
-      incidents: boolean;
-      maintenance: boolean;
+      enabled?: boolean;
+      // Legacy per-event flags from before monitor subscriptions.
+      incidents?: boolean;
+      maintenances?: boolean;
     };
   };
 }

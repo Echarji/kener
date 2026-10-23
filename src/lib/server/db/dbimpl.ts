@@ -380,6 +380,22 @@ class DbImpl {
   getSubscribersByMethodTypeV2!: SubscriptionSystemRepository["getSubscribersByMethodTypeV2"];
   getSubscriberDetailsByMethodId!: SubscriptionSystemRepository["getSubscriberDetailsByMethodId"];
 
+  // Monitor subscriptions (subscriber_monitor_subscriptions)
+  createMonitorSubscription!: SubscriptionSystemRepository["createMonitorSubscription"];
+  getMonitorSubscriptionById!: SubscriptionSystemRepository["getMonitorSubscriptionById"];
+  getMonitorSubscriptions!: SubscriptionSystemRepository["getMonitorSubscriptions"];
+  getMonitorSubscriptionsWithMonitorForMethod!: SubscriptionSystemRepository["getMonitorSubscriptionsWithMonitorForMethod"];
+  getMonitorSubscriptionsForMethods!: SubscriptionSystemRepository["getMonitorSubscriptionsForMethods"];
+  getMonitorSubscriptionTagsForMethod!: SubscriptionSystemRepository["getMonitorSubscriptionTagsForMethod"];
+  updateMonitorSubscription!: SubscriptionSystemRepository["updateMonitorSubscription"];
+  deleteMonitorSubscription!: SubscriptionSystemRepository["deleteMonitorSubscription"];
+  deleteMonitorSubscriptionsByMethodId!: SubscriptionSystemRepository["deleteMonitorSubscriptionsByMethodId"];
+  getMonitorSubscriptionCountByMethod!: SubscriptionSystemRepository["getMonitorSubscriptionCountByMethod"];
+  getActiveEmailsForMonitors!: SubscriptionSystemRepository["getActiveEmailsForMonitors"];
+  insertSubscriptionMigrationReport!: SubscriptionSystemRepository["insertSubscriptionMigrationReport"];
+  getSubscriptionMigrationReport!: SubscriptionSystemRepository["getSubscriptionMigrationReport"];
+  getSubscriptionMigrationReportCount!: SubscriptionSystemRepository["getSubscriptionMigrationReportCount"];
+
   // ============ General Email Templates ============
   insertEmailTemplate!: EmailTemplateConfigRepository["insertEmailTemplate"];
   updateEmailTemplate!: EmailTemplateConfigRepository["updateEmailTemplate"];
@@ -851,6 +867,37 @@ class DbImpl {
       this.subscriptionSystem,
     );
     this.getSubscriberDetailsByMethodId = this.subscriptionSystem.getSubscriberDetailsByMethodId.bind(
+      this.subscriptionSystem,
+    );
+
+    // Monitor subscriptions
+    this.createMonitorSubscription = this.subscriptionSystem.createMonitorSubscription.bind(this.subscriptionSystem);
+    this.getMonitorSubscriptionById = this.subscriptionSystem.getMonitorSubscriptionById.bind(this.subscriptionSystem);
+    this.getMonitorSubscriptions = this.subscriptionSystem.getMonitorSubscriptions.bind(this.subscriptionSystem);
+    this.getMonitorSubscriptionsWithMonitorForMethod =
+      this.subscriptionSystem.getMonitorSubscriptionsWithMonitorForMethod.bind(this.subscriptionSystem);
+    this.getMonitorSubscriptionsForMethods = this.subscriptionSystem.getMonitorSubscriptionsForMethods.bind(
+      this.subscriptionSystem,
+    );
+    this.getMonitorSubscriptionTagsForMethod = this.subscriptionSystem.getMonitorSubscriptionTagsForMethod.bind(
+      this.subscriptionSystem,
+    );
+    this.updateMonitorSubscription = this.subscriptionSystem.updateMonitorSubscription.bind(this.subscriptionSystem);
+    this.deleteMonitorSubscription = this.subscriptionSystem.deleteMonitorSubscription.bind(this.subscriptionSystem);
+    this.deleteMonitorSubscriptionsByMethodId = this.subscriptionSystem.deleteMonitorSubscriptionsByMethodId.bind(
+      this.subscriptionSystem,
+    );
+    this.getMonitorSubscriptionCountByMethod = this.subscriptionSystem.getMonitorSubscriptionCountByMethod.bind(
+      this.subscriptionSystem,
+    );
+    this.getActiveEmailsForMonitors = this.subscriptionSystem.getActiveEmailsForMonitors.bind(this.subscriptionSystem);
+    this.insertSubscriptionMigrationReport = this.subscriptionSystem.insertSubscriptionMigrationReport.bind(
+      this.subscriptionSystem,
+    );
+    this.getSubscriptionMigrationReport = this.subscriptionSystem.getSubscriptionMigrationReport.bind(
+      this.subscriptionSystem,
+    );
+    this.getSubscriptionMigrationReportCount = this.subscriptionSystem.getSubscriptionMigrationReportCount.bind(
       this.subscriptionSystem,
     );
   }

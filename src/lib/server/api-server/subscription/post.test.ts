@@ -13,11 +13,13 @@ vi.mock("$lib/server/controllers/userSubscriptionsController", () => ({
   VerifySubscriberOTP: vi.fn(),
   VerifySubscriberToken: vi.fn(),
   UpdateSubscriberPreferences: vi.fn(),
+  GetSubscribableMonitors: vi.fn(),
+  IsEmailSubscriptionConfigured: vi.fn(() => true),
 }));
 
 import post from "./post";
 
-const enabledConfig = { enable: true, methods: { emails: { incidents: true, maintenances: false } } };
+const enabledConfig = { enable: true, methods: { emails: { enabled: true } } };
 
 describe("POST /dashboard-apis/subscription — login action", () => {
   afterEach(() => {

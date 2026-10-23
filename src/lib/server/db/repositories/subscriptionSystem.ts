@@ -11,6 +11,12 @@ import type {
   UserSubscriptionV2RecordInsert,
   UserSubscriptionV2Filter,
   SubscriptionEventType,
+  MonitorSubscriptionRecord,
+  MonitorSubscriptionRecordInsert,
+  MonitorSubscriptionFilter,
+  MonitorSubscriptionWithMonitorRecord,
+  SubscriptionMigrationReportRecord,
+  SubscriptionMigrationReportInsert,
   DbTimestamp,
 } from "../../types/db.js";
 import { GetDbType } from "../../tool.js";
@@ -232,6 +238,164 @@ export class SubscriptionSystemRepository extends BaseRepository {
 
     const result = await query.first();
     return !!result;
+  }
+
+  // ============ Monitor Subscriptions ============
+
+  async createMonitorSubscription(data: MonitorSubscriptionRecordInsert): Promise<MonitorSubscriptionRecord> {
+    const dbType = GetDbType();
+    const insertData = {
+      subscriber_user_id: data.subscriber_user_id,
+      subscriber_method_id: data.subscriber_method_id,
+      monitor_tag: data.monitor_tag,
+      status: data.status || "ACTIVE",
+      created_at: this.knex.fn.now(),
+      updated_at: this.knex.fn.now(),
+    };
+
+    if (dbType === "postgresql") {
+      const [subscription] = await this.knex("subscriber_monitor_subscriptions").insert(insertData).returning("*");
+      return subscription;
+    }
+
+    const result = await this.knex("subscriber_monitor_subscriptions").insert(insertData);
+    return (await this.getMonitorSubscriptionById(result[0]))!;
+  }
+
+  async getMonitorSubscriptionById(id: number): Promise<MonitorSubscriptionRecord | undefined> {
+    return await this.knex("subscriber_monitor_subscriptions").where("id", id).first();
+  }
+
+  async getMonitorSubscriptions(filter: MonitorSubscriptionFilter): Promise<MonitorSubscriptionRecord[]> {
+    let query = this.knex("subscriber_monitor_subscriptions").select("*");
+
+    if (filter.subscriber_user_id !== undefined) {
+      query = query.where("subscriber_user_id", filter.subscriber_user_id);
+    }
+    if (filter.subscriber_method_id !== undefined) {
+      query = query.where("subscriber_method_id", filter.subscriber_method_id);
+    }
+    if (filter.monitor_tag !== undefined) {
+      query = query.where("monitor_tag", filter.monitor_tag);
+    }
+    if (filter.status !== undefined) {
+      query = query.where("status", filter.status);
+    }
+
+    return await query.orderBy("created_at", "desc");
+  }
+
+  async getMonitorSubscriptionsWithMonitorForMethod(methodId: number): Promise<MonitorSubscriptionWithMonitorRecord[]> {
+    return await this.knex("subscriber_monitor_subscriptions as msub")
+      .join("monitors as m", "msub.monitor_tag", "m.tag")
+      .where("msub.subscriber_method_id", methodId)
+      .select("msub.*", "m.name as monitor_name", "m.description as monitor_description");
+  }
+
+  async getMonitorSubscriptionsForMethods(methodIds: number[]): Promise<MonitorSubscriptionWithMonitorRecord[]> {
+    if (methodIds.length === 0) return [];
+
+    return await this.knex("subscriber_monitor_subscriptions as msub")
+      .join("monitors as m", "msub.monitor_tag", "m.tag")
+      .whereIn("msub.subscriber_method_id", methodIds)
+      .select("msub.*", "m.name as monitor_name", "m.description as monitor_description");
+  }
+
+  async getMonitorSubscriptionTagsForMethod(methodId: number): Promise<string[]> {
+    return await this.knex("subscriber_monitor_subscriptions")
+      .where("subscriber_method_id", methodId)
+      .andWhere("status", "ACTIVE")
+      .orderBy("created_at", "asc")
+      .pluck("monitor_tag");
+  }
+
+  async updateMonitorSubscription(id: number, data: Partial<MonitorSubscriptionRecordInsert>): Promise<number> {
+    const updateData: Record<string, unknown> = {
+      updated_at: this.knex.fn.now(),
+    };
+    if (data.monitor_tag !== undefined) updateData.monitor_tag = data.monitor_tag;
+    if (data.status !== undefined) updateData.status = data.status;
+
+    return await this.knex("subscriber_monitor_subscriptions").where("id", id).update(updateData);
+  }
+
+  async deleteMonitorSubscription(id: number): Promise<number> {
+    return await this.knex("subscriber_monitor_subscriptions").where("id", id).del();
+  }
+
+  async deleteMonitorSubscriptionsByMethodId(methodId: number): Promise<number> {
+    return await this.knex("subscriber_monitor_subscriptions").where("subscriber_method_id", methodId).del();
+  }
+
+  async getMonitorSubscriptionCountByMethod(methodId: number): Promise<number> {
+    const result = await this.knex("subscriber_monitor_subscriptions")
+      .where("subscriber_method_id", methodId)
+      .andWhere("status", "ACTIVE")
+      .count("id as count")
+      .first();
+    return Number(result?.count || 0);
+  }
+
+  /**
+   * Unique active email addresses of subscribers following any of the given
+   * monitors. An undefined `monitorTags` means the event affects every monitor
+   * (a global incident or maintenance), so every active monitor subscriber is
+   * included. An empty list matches no one.
+   */
+  async getActiveEmailsForMonitors(monitorTags?: string[]): Promise<string[]> {
+    if (monitorTags && monitorTags.length === 0) return [];
+
+    let query = this.knex("subscriber_monitor_subscriptions as msub")
+      .join("subscriber_users as su", "msub.subscriber_user_id", "su.id")
+      .join("subscriber_methods as sm", "msub.subscriber_method_id", "sm.id")
+      .where("msub.status", "ACTIVE")
+      .andWhere("su.status", "ACTIVE")
+      .andWhere("sm.status", "ACTIVE")
+      .andWhere("sm.method_type", "email");
+
+    if (monitorTags) {
+      query = query.whereIn("msub.monitor_tag", monitorTags);
+    }
+
+    const rows = await query.distinct("sm.method_value as email");
+    return rows.map((row: { email: string }) => row.email).filter(Boolean);
+  }
+
+  // ============ Migration report ============
+
+  async insertSubscriptionMigrationReport(
+    data: SubscriptionMigrationReportInsert,
+  ): Promise<SubscriptionMigrationReportRecord> {
+    const dbType = GetDbType();
+    const insertData = {
+      source: data.source,
+      source_id: data.source_id ?? null,
+      subscriber_email: data.subscriber_email ?? null,
+      reason: data.reason,
+      raw_data: data.raw_data ?? null,
+      created_at: this.knex.fn.now(),
+    };
+
+    if (dbType === "postgresql") {
+      const [row] = await this.knex("subscription_migration_report").insert(insertData).returning("*");
+      return row;
+    }
+
+    const result = await this.knex("subscription_migration_report").insert(insertData);
+    return (await this.knex("subscription_migration_report").where("id", result[0]).first())!;
+  }
+
+  async getSubscriptionMigrationReport(page: number, limit: number): Promise<SubscriptionMigrationReportRecord[]> {
+    return await this.knex("subscription_migration_report")
+      .select("*")
+      .orderBy("created_at", "desc")
+      .limit(limit)
+      .offset((page - 1) * limit);
+  }
+
+  async getSubscriptionMigrationReportCount(): Promise<number> {
+    const result = await this.knex("subscription_migration_report").count("id as count").first();
+    return Number(result?.count || 0);
   }
 
   // ============ Complex Queries ============

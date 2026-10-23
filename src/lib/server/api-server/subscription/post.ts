@@ -8,6 +8,8 @@ import {
   VerifySubscriberOTP,
   VerifySubscriberToken,
   UpdateSubscriberPreferences,
+  GetSubscribableMonitors,
+  IsEmailSubscriptionConfigured,
 } from "$lib/server/controllers/userSubscriptionsController";
 
 interface LoginRequest {
@@ -30,8 +32,7 @@ interface GetPreferencesRequest {
 interface UpdatePreferencesRequest {
   action: "updatePreferences";
   token: string;
-  incidents?: boolean;
-  maintenances?: boolean;
+  monitors: string[];
 }
 
 type PostRequestBody = LoginRequest | VerifyRequest | GetPreferencesRequest | UpdatePreferencesRequest;
@@ -46,8 +47,7 @@ export default async function post(req: APIServerRequest): Promise<Response> {
     return error(400, { message: "Subscriptions are not enabled" });
   }
 
-  const emailEnabled = config.methods?.emails?.incidents === true || config.methods?.emails?.maintenances === true;
-  if (!emailEnabled) {
+  if (!IsEmailSubscriptionConfigured(config)) {
     return error(400, { message: "Email subscriptions are not enabled" });
   }
 
@@ -61,9 +61,7 @@ export default async function post(req: APIServerRequest): Promise<Response> {
     case "updatePreferences":
       return handleUpdatePreferences(
         (body as UpdatePreferencesRequest).token,
-        (body as UpdatePreferencesRequest).incidents,
-        (body as UpdatePreferencesRequest).maintenances,
-        config,
+        (body as UpdatePreferencesRequest).monitors,
       );
     default:
       return error(400, { message: "Invalid action" });
@@ -111,37 +109,28 @@ async function handleGetPreferences(token: string, config: SubscriptionsConfig):
     return error(401, { message: result.error || "Invalid token" });
   }
 
+  const monitors = await GetSubscribableMonitors();
+
   return json({
     success: true,
     email: result.user?.email,
-    subscriptions: result.subscriptions,
+    subscriptions: result.subscriptions ?? { monitors: [] },
     availableSubscriptions: {
-      incidents: config.methods?.emails?.incidents === true,
-      maintenances: config.methods?.emails?.maintenances === true,
+      emails: IsEmailSubscriptionConfigured(config),
     },
+    monitors,
   });
 }
 
-async function handleUpdatePreferences(
-  token: string,
-  incidents: boolean | undefined,
-  maintenances: boolean | undefined,
-  config: SubscriptionsConfig,
-): Promise<Response> {
-  // Only allow updating subscriptions that are enabled in config
-  const preferences: { incidents?: boolean; maintenances?: boolean } = {};
-
-  if (incidents !== undefined && config.methods?.emails?.incidents) {
-    preferences.incidents = incidents;
-  }
-  if (maintenances !== undefined && config.methods?.emails?.maintenances) {
-    preferences.maintenances = maintenances;
+async function handleUpdatePreferences(token: string, monitors: string[]): Promise<Response> {
+  if (!Array.isArray(monitors) || monitors.some((monitor) => typeof monitor !== "string")) {
+    return error(400, { message: "monitors must be an array of monitor tags" });
   }
 
-  const result = await UpdateSubscriberPreferences(token, preferences);
+  const result = await UpdateSubscriberPreferences(token, monitors);
   if (!result.success) {
     return error(400, { message: result.error || "Failed to update preferences" });
   }
 
-  return json({ success: true });
+  return json({ success: true, monitors: result.monitors ?? [] });
 }

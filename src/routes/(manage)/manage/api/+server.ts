@@ -105,8 +105,10 @@ import {
   UpdateUserSubscriptionStatus,
   GetAdminSubscribersPaginated,
   AdminUpdateSubscriptionStatus,
+  AdminSetSubscriberMonitors,
   AdminDeleteSubscriber,
   AdminAddSubscriber,
+  GetSubscriptionMigrationReport,
 } from "$lib/server/controllers/userSubscriptionsController.js";
 import {
   GetAllGeneralEmailTemplates,
@@ -551,6 +553,15 @@ export async function POST({ request, cookies }) {
             created_at: s.created_at,
             updated_at: s.updated_at,
           })),
+          monitors: result.monitors.map((m) => ({
+            id: m.id,
+            monitor_tag: m.monitor_tag,
+            monitor_name: m.monitor_name,
+            monitor_description: m.monitor_description,
+            status: m.status,
+            created_at: m.created_at,
+            updated_at: m.updated_at,
+          })),
         };
       } else {
         resp = { subscriber: null, subscriptions: [] };
@@ -604,11 +615,20 @@ export async function POST({ request, cookies }) {
       const limit = parseInt(String(data.limit)) || 10;
       resp = await GetAdminSubscribersPaginated(page, limit);
     } else if (action == "adminUpdateSubscriptionStatus") {
-      const { methodId, eventType, enabled } = data;
-      if (!methodId || !eventType) {
-        throw new Error("Method ID and event type are required");
+      const { methodId, monitorTag, enabled } = data;
+      if (!methodId || !monitorTag) {
+        throw new Error("Method ID and monitor tag are required");
       }
-      resp = await AdminUpdateSubscriptionStatus(methodId, eventType, enabled);
+      resp = await AdminUpdateSubscriptionStatus(methodId, monitorTag, enabled);
+      if (!resp.success) {
+        throw new Error(resp.error);
+      }
+    } else if (action == "adminSetSubscriberMonitors") {
+      const { methodId, monitors } = data;
+      if (!methodId || !Array.isArray(monitors)) {
+        throw new Error("Method ID and monitors are required");
+      }
+      resp = await AdminSetSubscriberMonitors(methodId, monitors);
       if (!resp.success) {
         throw new Error(resp.error);
       }
@@ -622,14 +642,18 @@ export async function POST({ request, cookies }) {
         throw new Error(resp.error);
       }
     } else if (action == "adminAddSubscriber") {
-      const { email, incidents, maintenances } = data;
+      const { email, monitors } = data;
       if (!email) {
         throw new Error("Email is required");
       }
-      resp = await AdminAddSubscriber(email, incidents ?? false, maintenances ?? false);
+      resp = await AdminAddSubscriber(email, Array.isArray(monitors) ? monitors : []);
       if (!resp.success) {
         throw new Error(resp.error);
       }
+    } else if (action == "getSubscriptionMigrationReport") {
+      const page = parseInt(String(data.page)) || 1;
+      const limit = parseInt(String(data.limit)) || 25;
+      resp = await GetSubscriptionMigrationReport(page, limit);
     } else if (action == "getSubscriptionsConfig") {
       let subscriptionsSettings = await GetSiteDataByKey("subscriptionsSettings");
       if (!!!subscriptionsSettings) {
@@ -637,8 +661,7 @@ export async function POST({ request, cookies }) {
           enable: false,
           methods: {
             emails: {
-              incidents: true,
-              maintenances: true,
+              enabled: false,
             },
           },
         };

@@ -4,6 +4,8 @@ import q from "./q.js";
 import { InsertMonitoringData } from "../controllers/controller.js";
 import { SetLastMonitoringValue } from "../cache/setGet.js";
 import alertingQueue from "./alertingQueue.js";
+import db from "../db/db.js";
+import { NotifySubscribersOfMonitorStatusChange } from "../notification/monitorStatusNotification.js";
 import type { MonitoringData } from "../types/db.js";
 let monitorResponseQueue: Queue | null = null;
 let worker: Worker | null = null;
@@ -49,6 +51,18 @@ const addWorker = () => {
       cert_trusted,
     } = job.data as JobData;
 
+    // Read the previous sample before inserting so a status transition can
+    // notify that monitor's subscribers. An out-of-order sample is ignored.
+    let previousStatus = "";
+    try {
+      const previous = await db.getLatestMonitoringData(monitorTag);
+      if (previous && previous.timestamp < ts) {
+        previousStatus = previous.status || "";
+      }
+    } catch (err) {
+      console.error("Failed to read previous monitoring data for monitorTag:", monitorTag, err);
+    }
+
     const dbRes = await InsertMonitoringData({
       monitor_tag: monitorTag,
       timestamp: ts,
@@ -73,6 +87,9 @@ const addWorker = () => {
       ...(expiry_at ? { expiry_at, issuer_cn, issuer_o, cert_trusted } : {}),
     });
     alertingQueue.push(monitorTag, ts, status);
+    if (previousStatus) {
+      await NotifySubscribersOfMonitorStatusChange(monitorTag, previousStatus, status, ts);
+    }
 
     return dbRes;
   });
