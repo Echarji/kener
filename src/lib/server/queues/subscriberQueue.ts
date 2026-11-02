@@ -9,15 +9,26 @@ import { GetAllSiteData } from "../controllers/controller.js";
 import { siteDataToVariables } from "../notification/notification_utils.js";
 import type { SubscriptionVariableMap } from "../notification/types.js";
 import { GetGeneralEmailTemplateById } from "../controllers/generalTemplateController.js";
-import { GetActiveEmailsForEventType } from "../controllers/userSubscriptionsController.js";
+import { GetSubscriberEmailsForNotification } from "../controllers/userSubscriptionsController.js";
 import emailQueue from "./emailQueue.js";
 let subscriberQueue: Queue | null = null;
 let worker: Worker | null = null;
 const queueName = "subscriberQueue";
 const jobNamePrefix = "subscriberJob";
 
+/**
+ * Who hears of a notification besides the subscribers of its event type.
+ */
+export interface SubscriberAudience {
+  // The monitors the update is about: their subscribers hear of it too.
+  monitorTags: string[];
+  // Only those monitors' subscribers hear of it, not every subscriber of the event type.
+  monitorsOnly?: boolean;
+}
+
 interface SubscriberJobData {
   variables: SubscriptionVariableMap;
+  audience?: SubscriberAudience;
 }
 
 const getQueue = () => {
@@ -31,7 +42,7 @@ const addWorker = () => {
   if (worker) return worker;
 
   worker = q.createWorker(getQueue(), async (job: Job): Promise<void> => {
-    const { variables } = job.data as SubscriberJobData;
+    const { variables, audience } = job.data as SubscriberJobData;
 
     try {
       // Get site data for template variables
@@ -49,8 +60,12 @@ const addWorker = () => {
 
       const eventType = variables.event_type;
 
-      // Get active subscriber emails for this event type
-      const subscriberEmails = await GetActiveEmailsForEventType(eventType);
+      // Active subscribers of this event type and of the monitors it is about, each address once
+      const subscriberEmails = await GetSubscriberEmailsForNotification(
+        eventType,
+        audience?.monitorTags ?? [],
+        audience?.monitorsOnly ?? false,
+      );
 
       if (subscriberEmails.length === 0) {
         console.log(`📭 No active subscribers for event type: ${eventType}`);
@@ -90,7 +105,11 @@ const addWorker = () => {
 /**
  * Push a subscriber notification job to the queue
  */
-export const push = async (variables: SubscriptionVariableMap, options?: JobsOptions) => {
+export const push = async (
+  variables: SubscriptionVariableMap,
+  options?: JobsOptions,
+  audience?: SubscriberAudience,
+) => {
   if (!options) {
     options = {};
   }
@@ -119,6 +138,7 @@ export const push = async (variables: SubscriptionVariableMap, options?: JobsOpt
     `${jobNamePrefix}_${variables.update_id}`,
     {
       variables,
+      ...(audience ? { audience } : {}),
     },
     options,
   );

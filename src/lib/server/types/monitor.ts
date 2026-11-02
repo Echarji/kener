@@ -91,6 +91,10 @@ export interface GroupMonitorTypeData extends Record<string, unknown> {
   monitors: GroupMonitorMember[];
   executionDelay: number;
   latencyCalculation: "AVG" | "MAX" | "MIN";
+  /** How the status page lays out the members. Missing means "list". */
+  membersLayout?: "list" | "grid";
+  /** Whether each member shows its status history bar ("simple") or one line ("compact"). Missing means "compact". */
+  membersStyle?: "simple" | "compact";
 }
 
 export interface GamedigMonitorTypeData {

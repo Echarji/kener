@@ -878,6 +878,8 @@ export interface SubscriptionConfigUpdate {
 
 export type SubscriptionMethodType = "email";
 export type SubscriptionEventType = "incidents" | "maintenances";
+// What a subscriber notification is about: an event type, or a monitor's status change ("monitors").
+export type SubscriptionNotificationType = SubscriptionEventType | "monitors";
 export type SubscriptionStatus = "ACTIVE" | "INACTIVE";
 export type SubscriberUserStatus = "PENDING" | "ACTIVE" | "INACTIVE";
 
@@ -945,6 +947,17 @@ export interface UserSubscriptionV2Filter {
   event_type?: SubscriptionEventType;
 
   status?: SubscriptionStatus;
+}
+
+// ============ user_monitor_subscriptions table ============
+export interface UserMonitorSubscriptionRecord {
+  id: number;
+  subscriber_user_id: number;
+  subscriber_method_id: number;
+  monitor_tag: string;
+  status: SubscriptionStatus;
+  created_at: DbTimestamp;
+  updated_at: DbTimestamp;
 }
 
 // ============ Old types (kept for compatibility) ============
@@ -1022,6 +1035,8 @@ export interface SubscriptionsConfig {
     emails: {
       incidents: boolean;
       maintenances: boolean;
+      // Subscribing to single monitors. Missing in settings saved before it existed, where it counts as on.
+      monitors?: boolean;
     };
   };
 }

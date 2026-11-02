@@ -5,6 +5,7 @@
   import { Button } from "$lib/components/ui/button/index.js";
   import ThemePlus from "$lib/components/ThemePlus.svelte";
   import MonitorOverview from "$lib/components/MonitorOverview.svelte";
+  import MonitorSubscribeButton from "$lib/components/MonitorSubscribeButton.svelte";
   import ArrowUpRight from "@lucide/svelte/icons/arrow-up-right";
   import clientResolver, { absoluteResolve } from "$lib/client/resolver.js";
   import { resolve } from "$app/paths";
@@ -71,9 +72,12 @@
     <Item.Root class="px-0 py-0 ">
       <Item.Content>
         {#if data.monitorName}
-          <h1>
-            <Item.Title class="text-3xl">{data.monitorName}</Item.Title>
-          </h1>
+          <div class="flex flex-wrap items-center gap-x-3 gap-y-2">
+            <h1>
+              <Item.Title class="text-3xl">{data.monitorName}</Item.Title>
+            </h1>
+            <MonitorSubscribeButton tag={data.monitorTag} name={data.monitorName} labeled={true} />
+          </div>
         {/if}
         {#if data.monitorDescription}
           <h2 class="">

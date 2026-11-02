@@ -21,6 +21,9 @@ interface BatchState {
 
 const pendingBatches = new Map<string, BatchState>();
 
+// The most tags /dashboard-apis/monitor-bars takes in one request.
+const MAX_TAGS_PER_REQUEST = 100;
+
 /** In-memory cache: survives across component mounts, cleared on page refresh */
 const cache = new Map<string, MonitorBarResponse>();
 
@@ -39,32 +42,41 @@ const flushBatch = async (key: string): Promise<void> => {
   const days = Number(daysStr);
   const endOfDayTodayAtTz = Number(endTsStr);
 
-  try {
-    const query = `?tags=${encodeURIComponent(tags.join(","))}&endOfDayTodayAtTz=${endOfDayTodayAtTz}&days=${days}`;
-    const response = await fetch(clientResolver(resolve, "/dashboard-apis/monitor-bars") + query);
-
-    if (!response.ok) {
-      throw new Error("Failed to fetch monitor bars");
-    }
-
-    const payload = (await response.json()) as MonitorBarsResponse;
-
-    for (const tag of tags) {
-      const waiters = batch.waitersByTag.get(tag) || [];
-      const item = payload.data[tag];
-      if (item) {
-        cache.set(makeCacheKey(tag, days, endOfDayTodayAtTz), item);
-        waiters.forEach((w) => w.resolve(item));
-      } else {
-        const missingError = new Error(`Monitor data not found for tag: ${tag}`);
-        waiters.forEach((w) => w.reject(missingError));
-      }
-    }
-  } catch (err) {
-    for (const waiters of batch.waitersByTag.values()) {
-      waiters.forEach((w) => w.reject(err));
-    }
+  const chunks: string[][] = [];
+  for (let i = 0; i < tags.length; i += MAX_TAGS_PER_REQUEST) {
+    chunks.push(tags.slice(i, i + MAX_TAGS_PER_REQUEST));
   }
+
+  await Promise.all(
+    chunks.map(async (chunk) => {
+      try {
+        const query = `?tags=${encodeURIComponent(chunk.join(","))}&endOfDayTodayAtTz=${endOfDayTodayAtTz}&days=${days}`;
+        const response = await fetch(clientResolver(resolve, "/dashboard-apis/monitor-bars") + query);
+
+        if (!response.ok) {
+          throw new Error("Failed to fetch monitor bars");
+        }
+
+        const payload = (await response.json()) as MonitorBarsResponse;
+
+        for (const tag of chunk) {
+          const waiters = batch.waitersByTag.get(tag) || [];
+          const item = payload.data[tag];
+          if (item) {
+            cache.set(makeCacheKey(tag, days, endOfDayTodayAtTz), item);
+            waiters.forEach((w) => w.resolve(item));
+          } else {
+            const missingError = new Error(`Monitor data not found for tag: ${tag}`);
+            waiters.forEach((w) => w.reject(missingError));
+          }
+        }
+      } catch (err) {
+        for (const tag of chunk) {
+          (batch.waitersByTag.get(tag) || []).forEach((w) => w.reject(err));
+        }
+      }
+    }),
+  );
 };
 
 export const requestMonitorBar = (

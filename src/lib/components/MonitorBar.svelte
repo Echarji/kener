@@ -17,6 +17,7 @@
   } from "$lib/clientTools.js";
   import { getSslNowMs } from "$lib/client/sslClock.svelte";
   import GroupMonitorPopover from "./GroupMonitorPopover.svelte";
+  import MonitorSubscribeButton from "./MonitorSubscribeButton.svelte";
   import { t } from "$lib/stores/i18n";
   import { page } from "$app/state";
 
@@ -29,6 +30,8 @@
     endOfDayTodayAtTz?: number;
     compact?: boolean;
     grid?: boolean;
+    // Show the button that subscribes to this monitor.
+    subscribable?: boolean;
   }
 
   let {
@@ -39,7 +42,8 @@
     days,
     endOfDayTodayAtTz,
     compact = false,
-    grid = false
+    grid = false,
+    subscribable = false
   }: Props = $props();
   let data = $derived(prefetchedData ?? null);
   let error = $derived(prefetchedError ?? null);
@@ -122,8 +126,11 @@
         </Item.Media>
       {/if}
       <Item.Content class="min-w-0 flex-1">
-        <Item.Title class="w-full truncate">
-          <a class="hover:underline" href={clientResolver(resolve, `/monitors/${tag}`)}>{data.name}</a>
+        <Item.Title class="w-full gap-1">
+          <a class="min-w-0 truncate hover:underline" href={clientResolver(resolve, `/monitors/${tag}`)}>{data.name}</a>
+          {#if subscribable}
+            <MonitorSubscribeButton {tag} name={data.name} class="-my-1.5" />
+          {/if}
         </Item.Title>
         {#if data.description}
           <Item.Description class="line-clamp-2 wrap-break-word">{data.description}</Item.Description>

@@ -15,6 +15,7 @@ import { GetMinuteStartNowTimestampUTC } from "../tool.js";
 import { maintenanceToVariables, siteDataToVariables } from "../notification/notification_utils.js";
 import { GetAllSiteData } from "./controller.js";
 import subscriberQueue from "../queues/subscriberQueue.js";
+import { NotifyMonitorsAddedToMaintenance } from "./monitorSubscriptionsController.js";
 import GC from "../../global-constants";
 import seedSiteData from "../db/seedSiteData.js";
 
@@ -111,8 +112,11 @@ const pushMaintenanceUpdate = async (
   ]);
   if (maintenance?.is_global !== "YES" && monitors.length === 0) return;
   const monitorNames = monitors.map((m) => `${m.monitor_name}(${m.monitor_impact})`).join(", ");
+  // The subscribers of the maintenance's monitors hear of it too.
   await subscriberQueue.push(
     maintenanceToVariables(event, monitorNames, statusMessage, updateIdSuffix, subjectPrefix, siteUrl),
+    undefined,
+    { monitorTags: monitors.map((m) => m.monitor_tag) },
   );
 };
 
@@ -384,12 +388,16 @@ export const UpdateMaintenance = async (id: number, data: UpdateMaintenanceInput
   const result = await db.updateMaintenance(id, updateData);
 
   // Update monitors if provided
+  let addedMonitorTags: string[] = [];
   if (monitors !== undefined) {
+    const previousTags = new Set((await db.getMaintenanceMonitors(id)).map((m) => m.monitor_tag));
+    addedMonitorTags = monitors.map((m) => m.monitor_tag).filter((tag) => !previousTags.has(tag));
     await db.removeAllMonitorsFromMaintenance(id);
     if (monitors.length > 0) {
       await db.addMonitorsToMaintenanceWithStatus(id, monitors);
     }
   }
+  let eventsCreated = 0;
 
   // Handle schedule changes differently for one-time vs recurring
   if (scheduleChanged) {
@@ -408,7 +416,9 @@ export const UpdateMaintenance = async (id: number, data: UpdateMaintenanceInput
           }
         }
         // Regenerate the event
-        await GenerateMaintenanceEvents(id, updated.start_date_time, updated.rrule, updated.duration_seconds, 1);
+        eventsCreated += (
+          await GenerateMaintenanceEvents(id, updated.start_date_time, updated.rrule, updated.duration_seconds, 1)
+        ).length;
       } else {
         // For recurring maintenances: delete future SCHEDULED events and regenerate
         for (const event of events) {
@@ -418,9 +428,16 @@ export const UpdateMaintenance = async (id: number, data: UpdateMaintenanceInput
           }
         }
         // Regenerate events
-        await GenerateMaintenanceEvents(id, updated.start_date_time, updated.rrule, updated.duration_seconds, 1);
+        eventsCreated += (
+          await GenerateMaintenanceEvents(id, updated.start_date_time, updated.rrule, updated.duration_seconds, 1)
+        ).length;
       }
     }
+  }
+
+  // A regenerated window already emailed the subscribers of every monitor the maintenance now has.
+  if (eventsCreated === 0) {
+    await NotifyMonitorsAddedToMaintenance(id, addedMonitorTags);
   }
 
   return result;
@@ -585,7 +602,11 @@ export const AddMonitorToMaintenance = async (maintenance_id: number, monitor_ta
     throw new Error(`Monitor with tag ${monitor_tag} does not exist`);
   }
 
+  const alreadyAffected = (await db.getMaintenanceMonitors(maintenance_id)).some((m) => m.monitor_tag === monitor_tag);
   await db.addMonitorToMaintenance({ maintenance_id, monitor_tag });
+  if (!alreadyAffected) {
+    await NotifyMonitorsAddedToMaintenance(maintenance_id, [monitor_tag]);
+  }
 };
 
 export const RemoveMonitorFromMaintenance = async (maintenance_id: number, monitor_tag: string): Promise<number> => {

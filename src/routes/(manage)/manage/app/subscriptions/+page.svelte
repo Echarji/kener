@@ -23,6 +23,8 @@
   import Wrench from "@lucide/svelte/icons/wrench";
   import Mail from "@lucide/svelte/icons/mail";
   import Rss from "@lucide/svelte/icons/rss";
+  import Activity from "@lucide/svelte/icons/activity";
+  import { Badge } from "$lib/components/ui/badge/index.js";
 
   import type { SubscriptionsConfig } from "$lib/server/types/db.js";
   import AlertCircleIcon from "@lucide/svelte/icons/octagon-alert";
@@ -33,7 +35,8 @@
     methods: {
       emails: {
         incidents: true,
-        maintenances: true
+        maintenances: true,
+        monitors: true
       }
     }
   });
@@ -107,6 +110,7 @@
     maintenances_enabled: boolean;
     incidents_subscription_id: number | null;
     maintenances_subscription_id: number | null;
+    monitor_tags: string[];
     created_at: string;
   }
 
@@ -142,7 +146,10 @@
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "getSubscriptionsConfig" })
       });
-      config = await res.json();
+      const loaded: SubscriptionsConfig = await res.json();
+      // Settings saved before monitor subscriptions existed have no `monitors` key; there they are on.
+      loaded.methods.emails.monitors = loaded.methods.emails.monitors !== false;
+      config = loaded;
     } catch (error) {
       toast.error("Failed to load configuration");
     } finally {
@@ -380,6 +387,7 @@
                 config.enable = e;
                 config.methods.emails.incidents = e;
                 config.methods.emails.maintenances = e;
+                config.methods.emails.monitors = e;
                 handleConfigChange();
               }}
             />
@@ -420,6 +428,26 @@
                     }}
                   />
                 </div>
+                <div class="flex items-center justify-between gap-4">
+                  <div class="space-y-0.5">
+                    <div class="flex items-center gap-2">
+                      <Activity class="h-4 w-4 text-emerald-500" />
+                      <Label for="enable-email-monitors" class="mb-0">Monitor Updates</Label>
+                    </div>
+                    <p class="text-muted-foreground text-xs">
+                      Visitors pick single monitors and are emailed when one changes status, is added to an incident or
+                      maintenance, or an incident or maintenance affecting it is updated.
+                    </p>
+                  </div>
+                  <Switch
+                    id="enable-email-monitors"
+                    checked={config.methods.emails.monitors}
+                    onCheckedChange={(e) => {
+                      config.methods.emails.monitors = e;
+                      handleConfigChange();
+                    }}
+                  />
+                </div>
               </div>
             </div>
           {/if}
@@ -437,8 +465,8 @@
                 <div class="space-y-0.5">
                   <Label for="enable-rss-feed" class="mb-0">Show RSS feed link</Label>
                   <p class="text-muted-foreground text-xs">
-                    Adds an RSS icon to the public page header. The feed routes
-                    (<code class="text-xs">/rss.xml</code>) remain reachable either way.
+                    Adds an RSS icon to the public page header. The feed routes (<code class="text-xs">/rss.xml</code>)
+                    remain reachable either way.
                   </p>
                 </div>
                 <Switch
@@ -492,6 +520,12 @@
                   Maintenances
                 </div>
               </Table.Head>
+              <Table.Head>
+                <div class="flex items-center gap-1">
+                  <Activity class="h-4 w-4 text-emerald-500" />
+                  Monitors
+                </div>
+              </Table.Head>
               <Table.Head>Subscribed At</Table.Head>
               <Table.Head class="w-20 text-center">Actions</Table.Head>
             </Table.Row>
@@ -499,7 +533,7 @@
           <Table.Body>
             {#if loadingSubscribers && subscribers.length === 0}
               <Table.Row>
-                <Table.Cell colspan={5} class="py-8 text-center">
+                <Table.Cell colspan={6} class="py-8 text-center">
                   <div class="flex items-center justify-center gap-2">
                     <Spinner class="size-4" />
                     <span class="text-muted-foreground text-sm">Loading subscribers...</span>
@@ -508,7 +542,7 @@
               </Table.Row>
             {:else if subscribers.length === 0}
               <Table.Row>
-                <Table.Cell colspan={5} class="text-muted-foreground py-8 text-center">
+                <Table.Cell colspan={6} class="text-muted-foreground py-8 text-center">
                   No subscribers yet. Add your first subscriber above.
                 </Table.Cell>
               </Table.Row>
@@ -529,6 +563,20 @@
                       disabled={updatingToggle[`${subscriber.method_id}-maintenances`]}
                       onCheckedChange={(e) => toggleSubscription(subscriber, "maintenances", e)}
                     />
+                  </Table.Cell>
+                  <Table.Cell>
+                    {#if subscriber.monitor_tags.length === 0}
+                      <span class="text-muted-foreground text-xs">None</span>
+                    {:else}
+                      <div class="flex max-w-64 flex-wrap gap-1" title={subscriber.monitor_tags.join(", ")}>
+                        {#each subscriber.monitor_tags.slice(0, 3) as tag (tag)}
+                          <Badge variant="secondary" class="font-mono text-[11px]">{tag}</Badge>
+                        {/each}
+                        {#if subscriber.monitor_tags.length > 3}
+                          <Badge variant="outline" class="text-[11px]">+{subscriber.monitor_tags.length - 3}</Badge>
+                        {/if}
+                      </div>
+                    {/if}
                   </Table.Cell>
                   <Table.Cell>
                     <LocalTime value={subscriber.created_at} format="MMM d, yyyy" />

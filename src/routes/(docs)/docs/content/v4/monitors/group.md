@@ -45,6 +45,27 @@ Mapped group status:
 4 × 0.2 × 1 (UP) + 1 × 0.2 × 0 (DOWN) = 0.8 → DEGRADED
 ```
 
+## On the status page {#on-the-status-page}
+
+A group monitor added to a [page](/docs/v4/pages) is shown as a card:
+
+- The group's name, description, uptime and status history, and its status: **Operational** (`UP`), **Degraded**, **Down** or **Under Maintenance**, by the [scoring model](#status-scoring-model) above. One member down among healthy ones makes the group **Degraded**, not **Down**.
+- A summary of its members' statuses, worst first, for example `1 down · 3 operational`.
+- Its members, laid out by the group's [display settings](#status-page-display).
+
+Members that are inactive, or [hidden](/docs/v4/monitors/visibility) from the viewer, are left out of the card. Each member and the group can be [subscribed to](/docs/v4/subscriptions#monitor-notifications) on their own.
+
+### Status page display {#status-page-display}
+
+Set these under **Status page display** when editing the group:
+
+| Setting    | Options             | What visitors see                                                                                                                                                                      |
+| :--------- | :------------------ | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Layout** | `list`, `grid`      | Members one below the other, or side by side in columns that fit the card's width.                                                                                                     |
+| **Style**  | `simple`, `compact` | `simple`: each member with its icon, description, uptime and status history bar. `compact`: one line per member with its status and uptime; **Included Monitors** opens their history. |
+
+A group saved without these settings shows a compact list. Visitors can switch a group between list and grid with the toggle on its card; their choice is stored in their browser for that group.
+
 ## Latency aggregation {#latency-aggregation}
 
 Group latency uses selected mode:
@@ -63,11 +84,13 @@ Group latency uses selected mode:
 
 ## Configuration fields {#configuration-fields}
 
-| Field                | Type                   | Default | Notes                                          |
-| :------------------- | :--------------------- | :------ | :--------------------------------------------- |
-| `monitors`           | `Array<{tag, weight}>` | `[]`    | Required, min 2                                |
-| `executionDelay`     | `number`               | `1000`  | ms to wait before aggregating; must be >= 1000 |
-| `latencyCalculation` | `AVG\|MAX\|MIN`        | `AVG`   |                                                |
+| Field                | Type                   | Default   | Notes                                          |
+| :------------------- | :--------------------- | :-------- | :--------------------------------------------- |
+| `monitors`           | `Array<{tag, weight}>` | `[]`      | Required, min 2                                |
+| `executionDelay`     | `number`               | `1000`    | ms to wait before aggregating; must be >= 1000 |
+| `latencyCalculation` | `AVG\|MAX\|MIN`        | `AVG`     |                                                |
+| `membersLayout`      | `list\|grid`           | `list`    | How the status page lays out the members       |
+| `membersStyle`       | `simple\|compact`      | `compact` | `simple` adds each member's status history     |
 
 ## Example {#example}
 
@@ -81,7 +104,9 @@ Group latency uses selected mode:
             { "tag": "cache", "weight": 0.1 }
         ],
         "executionDelay": 1500,
-        "latencyCalculation": "AVG"
+        "latencyCalculation": "AVG",
+        "membersLayout": "grid",
+        "membersStyle": "simple"
     }
 }
 ```

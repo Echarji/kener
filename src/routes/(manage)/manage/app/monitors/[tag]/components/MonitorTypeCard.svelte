@@ -100,10 +100,20 @@
         ? candidate.executionDelay
         : GROUP_MIN_TIMEOUT_MS;
 
+    // The members display options are optional; kept only when set to a known value.
+    const display: Pick<GroupMonitorTypeData, "membersLayout" | "membersStyle"> = {};
+    if (candidate.membersLayout === "list" || candidate.membersLayout === "grid") {
+      display.membersLayout = candidate.membersLayout;
+    }
+    if (candidate.membersStyle === "simple" || candidate.membersStyle === "compact") {
+      display.membersStyle = candidate.membersStyle;
+    }
+
     return {
       monitors,
       latencyCalculation,
-      executionDelay
+      executionDelay,
+      ...display
     };
   }
 

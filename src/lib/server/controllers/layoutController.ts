@@ -13,6 +13,7 @@ import {
 } from "./controller.js";
 import type { EventDisplaySettings, GlobalPageVisibilitySettings, SiteDateTimeFormat } from "$lib/types/site.js";
 import serverResolve from "../resolver.js";
+import { MonitorSubscriptionsEnabled } from "./userSubscriptionsController.js";
 import { ResolveEventListPlacement } from "$lib/clientTools";
 
 export interface LayoutServerData {
@@ -45,6 +46,8 @@ export interface LayoutServerData {
   favicon: string | undefined;
   footerHTML: string;
   isSubsEnabled: boolean;
+  // Visitors can subscribe to single monitors.
+  isMonitorSubsEnabled: boolean;
   languageSetting: {
     defaultLocale: string;
     locales: Array<{ code: string; name: string; selected: boolean; disabled: boolean }>;
@@ -142,10 +145,11 @@ export async function GetLayoutServerData(cookies: Cookies, request: Request): P
   // Check if subscription is enabled
   let isSubsEnabled = false;
   const subsSetting = siteData.subscriptionsSettings;
+  const isMonitorSubsEnabled = MonitorSubscriptionsEnabled(subsSetting);
   if (
     subsSetting &&
     subsSetting.enable &&
-    (subsSetting.methods.emails.incidents || subsSetting.methods.emails.maintenance)
+    (subsSetting.methods.emails.incidents || subsSetting.methods.emails.maintenances || isMonitorSubsEnabled)
   ) {
     isSubsEnabled = true;
   }
@@ -178,6 +182,7 @@ export async function GetLayoutServerData(cookies: Cookies, request: Request): P
     favicon: siteData.favicon ? serverResolve(siteData.favicon) : siteData.favicon,
     footerHTML: siteData.footerHTML || "",
     isSubsEnabled,
+    isMonitorSubsEnabled,
     languageSetting,
     subMenuOptions: siteData.subMenuOptions || seedSiteData.subMenuOptions,
     isTimezoneEnabled,

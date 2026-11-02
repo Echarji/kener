@@ -379,6 +379,12 @@ class DbImpl {
   getMethodsCountByType!: SubscriptionSystemRepository["getMethodsCountByType"];
   getSubscribersByMethodTypeV2!: SubscriptionSystemRepository["getSubscribersByMethodTypeV2"];
   getSubscriberDetailsByMethodId!: SubscriptionSystemRepository["getSubscriberDetailsByMethodId"];
+  getMonitorSubscriptionTags!: SubscriptionSystemRepository["getMonitorSubscriptionTags"];
+  getMonitorSubscriptionTagsByMethodIds!: SubscriptionSystemRepository["getMonitorSubscriptionTagsByMethodIds"];
+  setMonitorSubscriptions!: SubscriptionSystemRepository["setMonitorSubscriptions"];
+  deleteMonitorSubscriptionsByMethodId!: SubscriptionSystemRepository["deleteMonitorSubscriptionsByMethodId"];
+  deleteMonitorSubscriptionsByTag!: SubscriptionSystemRepository["deleteMonitorSubscriptionsByTag"];
+  getEmailsSubscribedToMonitors!: SubscriptionSystemRepository["getEmailsSubscribedToMonitors"];
 
   // ============ General Email Templates ============
   insertEmailTemplate!: EmailTemplateConfigRepository["insertEmailTemplate"];
@@ -851,6 +857,22 @@ class DbImpl {
       this.subscriptionSystem,
     );
     this.getSubscriberDetailsByMethodId = this.subscriptionSystem.getSubscriberDetailsByMethodId.bind(
+      this.subscriptionSystem,
+    );
+
+    // Monitor subscriptions
+    this.getMonitorSubscriptionTags = this.subscriptionSystem.getMonitorSubscriptionTags.bind(this.subscriptionSystem);
+    this.getMonitorSubscriptionTagsByMethodIds = this.subscriptionSystem.getMonitorSubscriptionTagsByMethodIds.bind(
+      this.subscriptionSystem,
+    );
+    this.setMonitorSubscriptions = this.subscriptionSystem.setMonitorSubscriptions.bind(this.subscriptionSystem);
+    this.deleteMonitorSubscriptionsByMethodId = this.subscriptionSystem.deleteMonitorSubscriptionsByMethodId.bind(
+      this.subscriptionSystem,
+    );
+    this.deleteMonitorSubscriptionsByTag = this.subscriptionSystem.deleteMonitorSubscriptionsByTag.bind(
+      this.subscriptionSystem,
+    );
+    this.getEmailsSubscribedToMonitors = this.subscriptionSystem.getEmailsSubscribedToMonitors.bind(
       this.subscriptionSystem,
     );
   }

@@ -8,7 +8,12 @@ import {
   VerifySubscriberOTP,
   VerifySubscriberToken,
   UpdateSubscriberPreferences,
+  GetSubscribableMonitors,
+  MonitorSubscriptionsEnabled,
 } from "$lib/server/controllers/userSubscriptionsController";
+
+// The most monitors one preferences update may name.
+const MAX_MONITORS_PER_UPDATE = 500;
 
 interface LoginRequest {
   action: "login";
@@ -32,9 +37,20 @@ interface UpdatePreferencesRequest {
   token: string;
   incidents?: boolean;
   maintenances?: boolean;
+  // Replaces the monitors the subscriber follows.
+  monitors?: string[];
 }
 
-type PostRequestBody = LoginRequest | VerifyRequest | GetPreferencesRequest | UpdatePreferencesRequest;
+interface GetMonitorsRequest {
+  action: "getMonitors";
+}
+
+type PostRequestBody =
+  | LoginRequest
+  | VerifyRequest
+  | GetPreferencesRequest
+  | UpdatePreferencesRequest
+  | GetMonitorsRequest;
 
 export default async function post(req: APIServerRequest): Promise<Response> {
   const body = req.body as PostRequestBody;
@@ -46,7 +62,10 @@ export default async function post(req: APIServerRequest): Promise<Response> {
     return error(400, { message: "Subscriptions are not enabled" });
   }
 
-  const emailEnabled = config.methods?.emails?.incidents === true || config.methods?.emails?.maintenances === true;
+  const emailEnabled =
+    config.methods?.emails?.incidents === true ||
+    config.methods?.emails?.maintenances === true ||
+    MonitorSubscriptionsEnabled(config);
   if (!emailEnabled) {
     return error(400, { message: "Email subscriptions are not enabled" });
   }
@@ -63,8 +82,11 @@ export default async function post(req: APIServerRequest): Promise<Response> {
         (body as UpdatePreferencesRequest).token,
         (body as UpdatePreferencesRequest).incidents,
         (body as UpdatePreferencesRequest).maintenances,
+        (body as UpdatePreferencesRequest).monitors,
         config,
       );
+    case "getMonitors":
+      return handleGetMonitors(config);
     default:
       return error(400, { message: "Invalid action" });
   }
@@ -111,25 +133,36 @@ async function handleGetPreferences(token: string, config: SubscriptionsConfig):
     return error(401, { message: result.error || "Invalid token" });
   }
 
+  const monitorsEnabled = MonitorSubscriptionsEnabled(config);
   return json({
     success: true,
     email: result.user?.email,
     subscriptions: result.subscriptions,
+    monitors: monitorsEnabled ? result.monitors || [] : [],
     availableSubscriptions: {
       incidents: config.methods?.emails?.incidents === true,
       maintenances: config.methods?.emails?.maintenances === true,
+      monitors: monitorsEnabled,
     },
   });
+}
+
+async function handleGetMonitors(config: SubscriptionsConfig): Promise<Response> {
+  if (!MonitorSubscriptionsEnabled(config)) {
+    return error(400, { message: "Monitor subscriptions are not enabled" });
+  }
+  return json({ success: true, monitors: await GetSubscribableMonitors() });
 }
 
 async function handleUpdatePreferences(
   token: string,
   incidents: boolean | undefined,
   maintenances: boolean | undefined,
+  monitors: unknown,
   config: SubscriptionsConfig,
 ): Promise<Response> {
   // Only allow updating subscriptions that are enabled in config
-  const preferences: { incidents?: boolean; maintenances?: boolean } = {};
+  const preferences: { incidents?: boolean; maintenances?: boolean; monitors?: string[] } = {};
 
   if (incidents !== undefined && config.methods?.emails?.incidents) {
     preferences.incidents = incidents;
@@ -137,11 +170,20 @@ async function handleUpdatePreferences(
   if (maintenances !== undefined && config.methods?.emails?.maintenances) {
     preferences.maintenances = maintenances;
   }
+  if (monitors !== undefined && MonitorSubscriptionsEnabled(config)) {
+    if (!Array.isArray(monitors) || !monitors.every((tag) => typeof tag === "string")) {
+      return error(400, { message: "monitors must be an array of monitor tags" });
+    }
+    if (monitors.length > MAX_MONITORS_PER_UPDATE) {
+      return error(400, { message: `At most ${MAX_MONITORS_PER_UPDATE} monitors are allowed` });
+    }
+    preferences.monitors = monitors;
+  }
 
   const result = await UpdateSubscriberPreferences(token, preferences);
   if (!result.success) {
     return error(400, { message: result.error || "Failed to update preferences" });
   }
 
-  return json({ success: true });
+  return json(result.monitors !== undefined ? { success: true, monitors: result.monitors } : { success: true });
 }

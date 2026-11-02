@@ -3,6 +3,7 @@
   import { Input } from "$lib/components/ui/input/index.js";
   import { Button } from "$lib/components/ui/button/index.js";
   import * as Select from "$lib/components/ui/select/index.js";
+  import * as ToggleGroup from "$lib/components/ui/toggle-group/index.js";
   import { Badge } from "$lib/components/ui/badge/index.js";
   import MonitorPicker from "$lib/components/MonitorPicker.svelte";
   import type { MonitorRecord } from "$lib/server/types/db.js";
@@ -11,8 +12,19 @@
   import ArrowDown from "@lucide/svelte/icons/arrow-down";
   import GripVertical from "@lucide/svelte/icons/grip-vertical";
   import X from "@lucide/svelte/icons/x";
+  import LayoutGrid from "@lucide/svelte/icons/layout-grid";
+  import List from "@lucide/svelte/icons/list";
+  import Rows3 from "@lucide/svelte/icons/rows-3";
+  import Rows2 from "@lucide/svelte/icons/rows-2";
   import clientResolver from "$lib/client/resolver.js";
   import { resolve } from "$app/paths";
+  import {
+    DEFAULT_GROUP_DISPLAY,
+    GROUP_MEMBERS_LAYOUTS,
+    GROUP_MEMBERS_STYLES,
+    type GroupMembersLayout,
+    type GroupMembersStyle
+  } from "$lib/monitorGroups";
 
   const LATENCY_CALCULATION_OPTIONS = ["AVG", "MAX", "MIN"] as const;
   type LatencyCalculationOption = (typeof LATENCY_CALCULATION_OPTIONS)[number];
@@ -26,6 +38,8 @@
     monitors: GroupMonitorMember[];
     executionDelay: number;
     latencyCalculation: LatencyCalculationOption;
+    membersLayout?: GroupMembersLayout;
+    membersStyle?: GroupMembersStyle;
   };
 
   let {
@@ -224,6 +238,54 @@
         </Select.Content>
       </Select.Root>
       <p class="text-muted-foreground text-xs">Choose how latency should be derived from the selected monitors.</p>
+    </div>
+  </div>
+
+  <div class="space-y-3 rounded-lg border p-3">
+    <div class="flex flex-col gap-1">
+      <Label>Status page display</Label>
+      <p class="text-muted-foreground text-xs">
+        How this group shows its monitors on status pages. Simple shows each monitor's status history; compact shows one
+        line per monitor. Visitors can still switch between list and grid.
+      </p>
+    </div>
+    <div class="flex flex-wrap gap-x-6 gap-y-3">
+      <div class="flex flex-col gap-1.5">
+        <span class="text-muted-foreground text-xs font-medium" id="group-members-layout-label">Layout</span>
+        <ToggleGroup.Root
+          type="single"
+          variant="outline"
+          size="sm"
+          aria-labelledby="group-members-layout-label"
+          value={formData.membersLayout ?? DEFAULT_GROUP_DISPLAY.layout}
+          onValueChange={(value) => {
+            if (GROUP_MEMBERS_LAYOUTS.includes(value as GroupMembersLayout)) {
+              formData.membersLayout = value as GroupMembersLayout;
+            }
+          }}
+        >
+          <ToggleGroup.Item value="list" aria-label="List"><List />List</ToggleGroup.Item>
+          <ToggleGroup.Item value="grid" aria-label="Grid"><LayoutGrid />Grid</ToggleGroup.Item>
+        </ToggleGroup.Root>
+      </div>
+      <div class="flex flex-col gap-1.5">
+        <span class="text-muted-foreground text-xs font-medium" id="group-members-style-label">Style</span>
+        <ToggleGroup.Root
+          type="single"
+          variant="outline"
+          size="sm"
+          aria-labelledby="group-members-style-label"
+          value={formData.membersStyle ?? DEFAULT_GROUP_DISPLAY.style}
+          onValueChange={(value) => {
+            if (GROUP_MEMBERS_STYLES.includes(value as GroupMembersStyle)) {
+              formData.membersStyle = value as GroupMembersStyle;
+            }
+          }}
+        >
+          <ToggleGroup.Item value="simple" aria-label="Simple"><Rows2 />Simple</ToggleGroup.Item>
+          <ToggleGroup.Item value="compact" aria-label="Compact"><Rows3 />Compact</ToggleGroup.Item>
+        </ToggleGroup.Root>
+      </div>
     </div>
   </div>
 

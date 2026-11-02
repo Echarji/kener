@@ -4,6 +4,7 @@ import q from "./q.js";
 import { InsertMonitoringData } from "../controllers/controller.js";
 import { SetLastMonitoringValue } from "../cache/setGet.js";
 import alertingQueue from "./alertingQueue.js";
+import { NotifyMonitorStatusChange } from "../controllers/monitorSubscriptionsController.js";
 import type { MonitoringData } from "../types/db.js";
 let monitorResponseQueue: Queue | null = null;
 let worker: Worker | null = null;
@@ -73,6 +74,7 @@ const addWorker = () => {
       ...(expiry_at ? { expiry_at, issuer_cn, issuer_o, cert_trusted } : {}),
     });
     alertingQueue.push(monitorTag, ts, status);
+    await NotifyMonitorStatusChange(monitorTag, ts, status);
 
     return dbRes;
   });

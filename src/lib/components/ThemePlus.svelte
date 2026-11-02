@@ -94,15 +94,8 @@
   {/if}
   <div class="ml-auto flex shrink-0 items-center gap-2">
     {#if page.data.isSubsEnabled && page.data.canSendEmail}
-      <ButtonGroup.Root class="hidden shrink-0 sm:flex">
-        <SubscribeMenu />
-      </ButtonGroup.Root>
-    {/if}
-
-    {#if page.data.isSubsEnabled && page.data.canSendEmail}
-      <ButtonGroup.Root class="rounded-btn-grp shrink-0 sm:hidden">
-        <SubscribeMenu compact={true} />
-      </ButtonGroup.Root>
+      <!-- One menu for both sizes: the subscribe buttons on each monitor open its dialog -->
+      <SubscribeMenu responsive={true} />
     {/if}
 
     {#if page.data.subMenuOptions?.showRssFeed !== false}

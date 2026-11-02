@@ -24,6 +24,7 @@ import { GetAllSiteData } from "./siteDataController.js";
 import subscriberQueue from "../queues/subscriberQueue.js";
 import mdToHTML from "../../marked.js";
 import type { SubscriptionVariableMap } from "../notification/types.js";
+import { NotifyMonitorAddedToIncident } from "./monitorSubscriptionsController.js";
 
 interface IncidentsDashboardInput {
   page: number;
@@ -419,11 +420,19 @@ export const AddIncidentMonitor = async (
     throw new Error(`Incident with id ${incident_id} does not exist`);
   }
 
-  return await db.insertIncidentMonitorWithMerge({
+  const alreadyAffected = (await db.getIncidentMonitorsByIncidentID(incident_id)).some(
+    (m) => m.monitor_tag === monitor_tag,
+  );
+  const result = await db.insertIncidentMonitorWithMerge({
     incident_id,
     monitor_tag,
     monitor_impact,
   });
+  // Changing the impact of a monitor already on the incident is not news to its subscribers.
+  if (!alreadyAffected) {
+    await NotifyMonitorAddedToIncident(incidentExists, monitor_tag);
+  }
+  return result;
 };
 
 export const UpdateCommentByID = async (
@@ -473,10 +482,14 @@ const notifySubscribersOfComment = async (
   try {
     const siteData = await GetAllSiteData();
     const siteUrl = siteDataToVariables(siteData).site_url;
-    // Failing to read the impact must not cost the mail itself; it goes out without the flags.
+    // Failing to read the impact must not cost the mail itself; it goes out without the flags, to the
+    // incident subscribers only.
     let impacts: Array<string | null> | null = null;
+    let monitorTags: string[] = [];
     try {
-      impacts = (await db.getMonitorsByIncidentId(incident.id)).map((m) => m.monitor_impact);
+      const monitors = await db.getMonitorsByIncidentId(incident.id);
+      impacts = monitors.map((m) => m.monitor_impact);
+      monitorTags = monitors.map((m) => m.monitor_tag);
     } catch (err) {
       console.error(`Error reading monitors of incident ${incident.id} for its subscriber mail:`, err);
     }
@@ -502,9 +515,14 @@ const notifySubscribersOfComment = async (
     };
     // Stable dedup id per comment so a retried/double push notifies once — without
     // it subscriberQueue falls back to a Date.now()-suffixed id that never dedupes.
-    await subscriberQueue.push(variables, {
-      deduplication: { id: `subscriber-incidents-${comment.id}` },
-    });
+    // The subscribers of the incident's monitors hear of it too.
+    await subscriberQueue.push(
+      variables,
+      {
+        deduplication: { id: `subscriber-incidents-${comment.id}` },
+      },
+      { monitorTags },
+    );
   } catch (err) {
     console.error(`Error sending subscriber notification for incident ${incident.id}:`, err);
   }

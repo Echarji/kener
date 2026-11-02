@@ -234,6 +234,109 @@ export class SubscriptionSystemRepository extends BaseRepository {
     return !!result;
   }
 
+  // ============ Monitor Subscriptions ============
+
+  async getMonitorSubscriptionTags(subscriberMethodId: number): Promise<string[]> {
+    return await this.knex("user_monitor_subscriptions")
+      .where("subscriber_method_id", subscriberMethodId)
+      .andWhere("status", "ACTIVE")
+      .orderBy("monitor_tag", "asc")
+      .pluck("monitor_tag");
+  }
+
+  async getMonitorSubscriptionTagsByMethodIds(subscriberMethodIds: number[]): Promise<Record<number, string[]>> {
+    const tagsByMethodId: Record<number, string[]> = {};
+    if (subscriberMethodIds.length === 0) return tagsByMethodId;
+
+    const rows: Array<{ subscriber_method_id: number; monitor_tag: string }> = await this.knex(
+      "user_monitor_subscriptions",
+    )
+      .whereIn("subscriber_method_id", subscriberMethodIds)
+      .andWhere("status", "ACTIVE")
+      .orderBy("monitor_tag", "asc")
+      .select("subscriber_method_id", "monitor_tag");
+    for (const row of rows) {
+      (tagsByMethodId[row.subscriber_method_id] ??= []).push(row.monitor_tag);
+    }
+    return tagsByMethodId;
+  }
+
+  /**
+   * Makes `monitorTags` the method's whole set of monitor subscriptions: adds the missing ones and
+   * deletes the others. A tag subscribed twice at once is stored once (unique method + tag).
+   */
+  async setMonitorSubscriptions(
+    subscriberUserId: number,
+    subscriberMethodId: number,
+    monitorTags: string[],
+  ): Promise<void> {
+    const wanted = [...new Set(monitorTags)];
+
+    await this.knex.transaction(async (trx) => {
+      const unwanted = trx("user_monitor_subscriptions").where("subscriber_method_id", subscriberMethodId);
+      if (wanted.length > 0) {
+        unwanted.whereNotIn("monitor_tag", wanted);
+      }
+      await unwanted.del();
+      if (wanted.length === 0) return;
+
+      await trx("user_monitor_subscriptions")
+        .where("subscriber_method_id", subscriberMethodId)
+        .whereIn("monitor_tag", wanted)
+        .whereNot("status", "ACTIVE")
+        .update({ status: "ACTIVE", updated_at: trx.fn.now() });
+
+      const existing = new Set<string>(
+        await trx("user_monitor_subscriptions")
+          .where("subscriber_method_id", subscriberMethodId)
+          .whereIn("monitor_tag", wanted)
+          .pluck("monitor_tag"),
+      );
+      const missing = wanted.filter((tag) => !existing.has(tag));
+      if (missing.length === 0) return;
+
+      await trx("user_monitor_subscriptions")
+        .insert(
+          missing.map((monitor_tag) => ({
+            subscriber_user_id: subscriberUserId,
+            subscriber_method_id: subscriberMethodId,
+            monitor_tag,
+            status: "ACTIVE",
+            created_at: trx.fn.now(),
+            updated_at: trx.fn.now(),
+          })),
+        )
+        .onConflict(["subscriber_method_id", "monitor_tag"])
+        .ignore();
+    });
+  }
+
+  async deleteMonitorSubscriptionsByMethodId(subscriberMethodId: number): Promise<number> {
+    return await this.knex("user_monitor_subscriptions").where("subscriber_method_id", subscriberMethodId).del();
+  }
+
+  async deleteMonitorSubscriptionsByTag(monitorTag: string): Promise<number> {
+    return await this.knex("user_monitor_subscriptions").where("monitor_tag", monitorTag).del();
+  }
+
+  /**
+   * Email addresses of active, verified subscribers that follow any of `monitorTags`, each once.
+   */
+  async getEmailsSubscribedToMonitors(monitorTags: string[]): Promise<string[]> {
+    if (monitorTags.length === 0) return [];
+
+    const rows: Array<{ email: string }> = await this.knex("user_monitor_subscriptions as ums")
+      .join("subscriber_users as su", "ums.subscriber_user_id", "su.id")
+      .join("subscriber_methods as sm", "ums.subscriber_method_id", "sm.id")
+      .whereIn("ums.monitor_tag", [...new Set(monitorTags)])
+      .andWhere("ums.status", "ACTIVE")
+      .andWhere("su.status", "ACTIVE")
+      .andWhere("sm.status", "ACTIVE")
+      .andWhere("sm.method_type", "email")
+      .distinct("sm.method_value as email");
+    return rows.map((row) => row.email);
+  }
+
   // ============ Complex Queries ============
 
   /**

@@ -129,6 +129,7 @@ const seedSiteData = {
       emails: {
         incidents: false,
         maintenances: false,
+        monitors: false,
       },
     },
   },

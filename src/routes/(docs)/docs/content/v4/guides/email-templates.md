@@ -93,12 +93,16 @@ All templates can use site-level variables:
 | `{{cta_text}}`                                                                          | Call-to-action text                                                                                               |
 | `{{cta_url}}`                                                                           | Call-to-action URL                                                                                                |
 | `{{update_id}}`                                                                         | Event/update identifier                                                                                           |
-| `{{event_type}}`                                                                        | Event category                                                                                                    |
+| `{{event_type}}`                                                                        | Event category: `incidents`, `maintenances`, or `monitors` for a monitor's status change                          |
 | `{{update_state}}`                                                                      | Incident updates: the comment's state, e.g. `INVESTIGATING`                                                       |
 | `{{#is_investigating}}`, `{{#is_identified}}`, `{{#is_monitoring}}`, `{{#is_resolved}}` | Incident updates: true for the comment's state                                                                    |
 | `{{incident_impact}}`                                                                   | Incident updates: the worst impact among the incident's monitors that are not hidden, `DOWN`, `DEGRADED` or empty |
 | `{{#is_down}}`, `{{#is_degraded}}`                                                      | Incident updates: true for that worst impact                                                                      |
 | `{{#is_maintenance}}`                                                                   | True for maintenance mails                                                                                        |
+| `{{#is_monitor_update}}`                                                                | True for mails about one monitor: its status changed, or it was added to an incident or maintenance               |
+| `{{monitor_name}}`, `{{monitor_tag}}`                                                   | Mails about one monitor: that monitor                                                                             |
+| `{{monitor_status}}`, `{{monitor_previous_status}}`                                     | Status change mails: the new and the previous status, `UP`, `DOWN` or `DEGRADED`                                  |
+| `{{#is_up}}`, `{{#is_down}}`, `{{#is_degraded}}`                                        | Status change mails: true for the new status                                                                      |
 
 The flags let a template change its look by what the mail is about, which Mustache cannot do by comparing strings. For example, a banner only on resolved incidents:
 

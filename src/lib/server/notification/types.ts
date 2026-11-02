@@ -1,4 +1,4 @@
-import type { SubscriptionEventType } from "../db/dbimpl";
+import type { SubscriptionNotificationType } from "../db/dbimpl";
 
 export interface AlertVariableMap {
   alert_id: number;
@@ -35,7 +35,7 @@ export interface SubscriptionVariableMap {
   update_text: string;
   update_subject: string;
   update_id: string;
-  event_type: SubscriptionEventType;
+  event_type: SubscriptionNotificationType;
   // Flags for templates that style by what the mail is about. Mustache has no comparisons, so
   // each is a boolean a section can test; only the flags that apply are set.
   update_state?: string;
@@ -48,6 +48,14 @@ export interface SubscriptionVariableMap {
   is_down?: boolean;
   is_degraded?: boolean;
   is_maintenance?: boolean;
+  // Set on mails about one monitor: its status changed, or it was added to an incident or maintenance.
+  monitor_name?: string;
+  monitor_tag?: string;
+  is_monitor_update?: boolean;
+  // A status change: the monitor's status before and after, "UP", "DOWN" or "DEGRADED".
+  monitor_status?: string;
+  monitor_previous_status?: string;
+  is_up?: boolean;
 }
 
 export interface EmailCodeVariableMap {

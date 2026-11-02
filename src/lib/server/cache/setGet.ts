@@ -21,7 +21,17 @@ export async function GetLastHeartbeat(tag: string): Promise<{ timestamp: number
   return await getCache<{ timestamp: number }>("last_heartbeat:" + tag, undefined, 45 * 86400);
 }
 
+// The last UP, DOWN or DEGRADED status a monitor recorded, for the emails to its subscribers
+export async function SetSubscriberLastStatus(tag: string, value: { status: string; ts: number }): Promise<void> {
+  await setCache<{ status: string; ts: number }>("subscriber_last_status:" + tag, value, 30 * 86400); //set ttl to 30 days
+}
+
+export async function GetSubscriberLastStatus(tag: string): Promise<{ status: string; ts: number } | null> {
+  return await getCache<{ status: string; ts: number }>("subscriber_last_status:" + tag);
+}
+
 export async function DeleteMonitorCaches(tag: string): Promise<void> {
   await deleteCache(tag + ":last_status");
   await deleteCache("last_heartbeat:" + tag);
+  await deleteCache("subscriber_last_status:" + tag);
 }

@@ -649,6 +649,7 @@ export async function POST({ request, cookies }) {
             emails: {
               incidents: true,
               maintenances: true,
+              monitors: true,
             },
           },
         };

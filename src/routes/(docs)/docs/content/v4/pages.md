@@ -64,6 +64,8 @@ Choose one layout:
 
 Click **Save Preferences** after changes.
 
+A [group monitor](/docs/v4/monitors/group#on-the-status-page) on the page is shown as a card with its members, laid out by the group's own display settings.
+
 ## Social preview and SEO {#social-preview-and-seo}
 
 Each page can override the site-level SEO defaults set in [Site Configuration](/docs/v4/setup/site-configuration#social-preview-and-seo).
